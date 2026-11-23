@@ -6,7 +6,7 @@ const B=(id,label,icon='arrow',extra='')=>'<button class="x-button '+extra+'" ty
 const tabs=(group,options)=>'<div class="x-tabs" role="tablist" aria-label="'+group+' views">'+options.map(([id,label,icon])=>'<button type="button" role="tab" aria-selected="'+(X[group]===id)+'" class="x-tab '+(X[group]===id?'selected':'')+'" data-ux-tab="'+group+':'+id+'">'+ico(icon,15)+' '+label+'</button>').join('')+'</div>';
 const blank=(title,message,cta='',label='')=>'<div class="x-empty">'+ico('releases',33)+'<h3>'+title+'</h3><p>'+message+'</p>'+(cta?'<button class="primary tiny" data-action="'+cta+'">'+label+' '+ico('arrow',13)+'</button>':'')+'</div>';
 const panel=(label,value,desc,icon='bolt')=>'<div class="x-metric">'+ico(icon,19)+'<div class="x-metric-meta"><span>'+label+'</span><b>'+value+'</b><small>'+desc+'</small></div></div>';
-const quickbar=()=>'<div class="x-quickbar"><button type="button" data-ux-command="open" class="x-command">'+ico('search',17)+'<span>Search music, artists & actions</span><kbd>⌘ K</kbd></button><div class="x-quicklinks">'+B('releases','Discover','releases')+B('clips','Clip desk','scissors')+(isCreator()?'<button class="x-button accent" data-action="upload">'+ico('plus',16)+'<span>New release</span></button>':'<button class="x-button accent" data-action="'+(S.user?'role':'register')+'">'+ico('plus',16)+'<span>'+(S.user?'Artist tools':'Join')+'</span></button>')+'</div></div>';
+const quickbar=()=>'<div class="x-quickbar"><button type="button" data-ux-command="open" class="x-command">'+ico('search',17)+'<span>Search music, artists & actions</span><kbd>⌘ K</kbd></button><div class="x-quicklinks">'+B('releases','Discover','releases')+B('clips','Clip desk','scissors')+(S.user?'<button type="button" class="x-button" data-ux-command="activity">'+ico('bell',15)+'<span>Activity</span></button>':'')+(isCreator()?'<button class="x-button accent" data-action="upload">'+ico('plus',16)+'<span>New release</span></button>':'<button class="x-button accent" data-action="'+(S.user?'role':'register')+'">'+ico('plus',16)+'<span>'+(S.user?'Artist tools':'Join')+'</span></button>')+'</div></div>';
 function wrapIntro(label,title,description,actions=''){return '<header class="x-page-title"><span class="x-kicker">'+label+'</span><div class="x-heading-row"><div><h1>'+title+'</h1><p>'+description+'</p></div><div class="x-heading-actions">'+actions+'</div></div></header>'}
 const originalShell=renderShell;
 renderShell=function(inner){
@@ -94,6 +94,35 @@ walletPage=function(){
  const hist=data.length?'<div class="x-draft-list">'+data.map(a=>'<div class="x-row"><span class="x-row-main"><b>'+esc(a.campaign_title||'Campaign reward')+'</b><small>'+esc(a.type.replace(/_/g,' '))+' · '+date(a.created_at)+'</small></span><b class="x-row-money">'+eur(a.amount_cents)+'</b></div>').join('')+'</div>':blank('No reward events recorded.','Your ledger remains empty until a verified funded campaign approves a valid submission.');
  return intro+s+(X.wallet==='overview'?overview+'<div class="x-trust-note">'+ico('shield',18)+' <span><b>Payments are not enabled.</b> No deposits, withdrawals or rewards will be simulated. Eligible payment methods appear only after actual verification.</span></div>':hist);
 };
+
+const oldPlayModal=playModal;
+playModal=function(r,clipMode=false){
+ oldPlayModal(r,clipMode);
+ if(!r)return;
+ const info=document.querySelector('.player-info');
+ const actions=document.querySelector('.video-actions');
+ if(info && !document.querySelector('#ux-follow-btn') && r.owner_id!==S.user?.id){
+  info.insertAdjacentHTML('afterbegin','<div class="x-artist-follow"><span class="x-kicker">ARTIST CONNECTION</span><button type="button" class="outline tiny" id="ux-follow-btn" data-ux-follow="'+esc(r.owner_id)+'" '+(!S.user?'data-signin="true"':'')+'>'+ico('plus',13)+' Follow artist</button><small id="ux-follow-count" aria-live="polite"></small></div>');
+  api('/artists/'+r.owner_id).then(d=>{const b=document.querySelector('#ux-follow-btn'),n=document.querySelector('#ux-follow-count');if(b){b.textContent=d.artist.following?'✓ Following':'＋ Follow artist';b.classList.toggle('active',d.artist.following)}if(n)n.textContent=d.artist.followers+' followers';}).catch(()=>{});
+ }
+ if(actions&&S.user&&r.owner_id!==S.user.id&&!document.querySelector('#ux-report-btn')){
+  actions.insertAdjacentHTML('beforeend','<button type="button" class="outline tiny x-report-btn" id="ux-report-btn" data-ux-report="'+esc(r.id)+'">Report</button>');
+ }
+};
+async function openActivity(){
+ if(!S.user)return authModal('login');
+ showOverlay('<div class="x-kicker">VIEWLY / ACTIVITY</div><h2>What’s happening.</h2><div id="ux-activity" role="status" class="x-activity-loading">Loading your real activity…</div>','medium');
+ try{
+  const d=await api('/activity');
+  const el=document.querySelector('#ux-activity');if(!el)return;
+  el.innerHTML=d.items.length?'<div class="x-activity-items">'+d.items.map(i=>'<div class="x-activity-item"><span class="x-activity-icon">'+ico(i.type==='comment'?'releases':i.type==='follow'?'user':'play',18)+'</span><span><b>'+esc(i.title)+'</b><small>'+date(i.created_at)+'</small></span></div>').join('')+'</div>':blank('No activity yet.','When artists you follow post music, or someone interacts with your releases, you will see it here.');
+ }catch(e){const el=document.querySelector('#ux-activity');if(el)el.textContent=e.message||'Unable to load activity.'}
+}
+function showReport(releaseId){
+ if(!S.user)return authModal('login');
+ showOverlay('<div class="x-kicker">SAFETY / CONTENT REPORT</div><h2>Report a release.</h2><p class="intro">Send a genuine report to the Viewly moderation queue. This does not automatically remove content.</p><form id="ux-report-form" data-id="'+esc(releaseId)+'"><div class="field"><label>REASON</label><select required name="reason"><option value="copyright">Copyright or unauthorized upload</option><option value="harassment">Harassment or abuse</option><option value="misleading">Misleading content</option><option value="other">Other</option></select></div><div class="field"><label>DETAILS</label><textarea name="details" maxlength="600" placeholder="Explain what is wrong. No personal information needed."></textarea></div><button class="primary x-full" type="submit">Submit genuine report</button></form>','medium');
+}
+
 const oldClipEditor=clipEditor;
 clipEditor=function(r){
  if(!S.user)return authModal('register');
@@ -152,7 +181,7 @@ function renderPalette(){
 document.addEventListener('click',e=>{
  const tab=e.target.closest('[data-ux-tab]');if(tab){const [group,value]=tab.dataset.uxTab.split(':');if(X[group]!==value){X[group]=value;render();}e.stopPropagation();return}
  const nav=e.target.closest('[data-ux-nav]');if(nav){S.page=nav.dataset.uxNav;S.genre='All';S.q='';render();window.scrollTo({top:0,behavior:'instant'});if(['wallet','clips','studio'].includes(S.page))refresh(true);e.stopPropagation();return}
- const cmd=e.target.closest('[data-ux-command]');if(cmd){e.preventDefault();e.stopPropagation();if(cmd.dataset.uxCommand==='open')openPalette();else if(cmd.dataset.uxCommand==='mark-in'||cmd.dataset.uxCommand==='mark-out'){const start=cmd.dataset.uxCommand==='mark-in';const v=document.querySelector('#ux-clip-preview'),target=document.querySelector('#clip-form [name='+(start?'start':'end')+']');if(v&&target){target.value=v.currentTime.toFixed(1);updateClipControls();}}return}
+ const cmd=e.target.closest('[data-ux-command]');if(cmd){e.preventDefault();e.stopPropagation();if(cmd.dataset.uxCommand==='open')openPalette();else if(cmd.dataset.uxCommand==='activity')openActivity();else if(cmd.dataset.uxCommand==='mark-in'||cmd.dataset.uxCommand==='mark-out'){const start=cmd.dataset.uxCommand==='mark-in';const v=document.querySelector('#ux-clip-preview'),target=document.querySelector('#clip-form [name='+(start?'start':'end')+']');if(v&&target){target.value=v.currentTime.toFixed(1);updateClipControls();}}return}
  const result=e.target.closest('[data-ux-result]');if(result){const item=options()[Number(result.dataset.uxResult)];closePalette();if(item){if(item.action==='play'){const rel=S.releases.find(r=>r.id===item.id);if(rel)playModal(rel);}else{S.page=item.page;S.q='';S.genre='All';render();window.scrollTo(0,0);if(['studio','clips','wallet'].includes(S.page))refresh(true)}}return}
  if(e.target.id==='ux-palette'){closePalette();return}
 },true);
@@ -162,6 +191,24 @@ document.addEventListener('input',e=>{
  if(e.target.id==='ux-start-range'||e.target.id==='ux-end-range')updateClipControls(e.target.id);
 },true);
 document.addEventListener('change',e=>{if(e.target.id==='x-sort'){X.sort=e.target.value;render();e.stopImmediatePropagation()}},true);
+
+document.addEventListener('click',async e=>{
+ const follow=e.target.closest('[data-ux-follow]');
+ if(follow){e.preventDefault();e.stopPropagation();if(!S.user)return authModal('login');follow.disabled=true;
+  try{const d=await api('/artists/'+follow.dataset.uxFollow+'/follow','POST');follow.textContent=d.artist.following?'✓ Following':'＋ Follow artist';follow.classList.toggle('active',d.artist.following);const n=document.querySelector('#ux-follow-count');if(n)n.textContent=d.artist.followers+' followers';}
+  catch(err){toast(err.message||'Follow failed.',true)}finally{follow.disabled=false}return
+ }
+ const report=e.target.closest('[data-ux-report]');
+ if(report){e.preventDefault();e.stopPropagation();showReport(report.dataset.uxReport)}
+},true);
+document.addEventListener('submit',async e=>{
+ if(e.target.id!=='ux-report-form')return;e.preventDefault();e.stopPropagation();
+ const form=e.target,button=form.querySelector('[type=submit]'),fd=new FormData(form);
+ if(button)button.disabled=true;
+ try{const d=await api('/releases/'+form.dataset.id+'/report','POST',{reason:fd.get('reason'),details:fd.get('details')});closeOverlay();toast(d.status==='already_submitted'?'Report already recorded.':'Report recorded for administrator review.');}
+ catch(err){toast(err.message||'Unable to record report.',true)}finally{if(button)button.disabled=false}
+},true);
+
 document.addEventListener('keydown',e=>{
  const typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'')||document.activeElement?.isContentEditable;
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();X.palette?closePalette():openPalette()}
