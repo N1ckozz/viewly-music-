@@ -10,8 +10,10 @@ RUN mkdir -p /tmp/viewly-src \
  && rm -rf /tmp/viewly-src /tmp/viewly-music.zip
 COPY public/stage.css /app/public/stage.css
 COPY public/stage.js /app/public/stage.js
-RUN sed -i 's|</head>|<link rel="stylesheet" href="/stage.css"/></head>|' /app/public/index.html \
- && sed -i 's|</body>|<script src="/stage.js" defer></script></body>|' /app/public/index.html \
+COPY public/experience.css /app/public/experience.css
+COPY public/experience.js /app/public/experience.js
+RUN sed -i 's|</head>|<link rel="stylesheet" href="/stage.css"/><link rel="stylesheet" href="/experience.css"/></head>|' /app/public/index.html \
+ && sed -i 's|</body>|<script src="/stage.js" defer></script><script src="/experience.js" defer></script></body>|' /app/public/index.html \
  && mkdir -p /app/data /app/uploads \
  && chown -R node:node /app
 USER node
