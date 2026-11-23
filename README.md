@@ -1,1 +1,65 @@
-# viewly-music-
+# VIEWLY MUSIC
+
+Independent rap, trap, drill and hip-hop promotion and clipping platform.
+
+Public staging: https://viewly-web-staging.up.railway.app
+Repository: https://github.com/N1ckozz/viewly-music-
+
+## Implemented and real
+
+- Email/password users, sessions and optional Google OAuth when configured.
+- Artist/label and viewer/clipper roles, profiles.
+- Authorized video upload with media validation; playback, signed-in unique plays, likes and comments.
+- Real FFmpeg clip exports, IN/OUT timeline UI, vertical and original framing.
+- Discover and release filters, sorting, real data metrics, native link sharing and direct release links.
+- Artist follow/unfollow, public artist information, activity derived from database records.
+- Authenticated content reports and an administrator report-review endpoint.
+- Private campaign drafts with per-clip reward settings and a transparent 5% fee calculation.
+- Read-only wallet ledger; no fabricated money.
+- Desktop/mobile Viewly design with fast navigation, search command palette, artist studio, tabs, and reduced-motion styling.
+- CI and Docker build checks for authentication, upload, clip export, security, activity, follows, reports, UI navigation.
+
+## Not ready for public paid operations
+
+**STAGING/BETA ONLY. NOT COMMERCIAL LAUNCH READY.**
+
+Withdrawals and payouts are NOT implemented; payments and campaign rewards remain deliberately disabled in source. There is no guaranteed automated social view verification, complete copyright moderation, email verification, password reset, approved production payment provider, KYC/tax/legal solution or complete anti-fraud review. Do not present any of these as operational.
+
+The backend intentionally refuses payments that are not genuinely configured and verified.
+
+## Local startup
+
+Node.js >= 22.13 and FFmpeg/FFprobe are required.
+
+    npm test
+    npm start
+
+Then open http://localhost:4179 on the computer running the server.
+
+## Real source architecture
+
+- server.js: Node HTTP, SQLite, authentication, content, clipping, drafts, payments hard-gates, follows, reports.
+- public/app.js: core API logic and actions.
+- public/stage.js: content-first navigation and discovery.
+- public/experience.js: interactive release sorting, workspace tabs, search, artist follow, sharing, activity, clip editor.
+- public/styles.css, stage.css and experience.css: accessible responsive styles, brand design, dark visual depth.
+- tests: real end-to-end backend and simulated UI interaction checks.
+- Dockerfile: builds from source, checks tests before deployment.
+
+The original ZIP remains a backup snapshot, but the live build is now source-based.
+
+## Railway staging settings
+
+Project: viewly-music. Environment: staging. Service: viewly-web.
+
+    NODE_ENV=production
+    APP_URL=https://viewly-web-staging.up.railway.app
+    VIEWLY_PAID_MARKETPLACE_ENABLED=false
+    VIEWLY_PAYOUTS_OPERATIONAL=false
+    VIEWLY_LEGAL_REVIEW_COMPLETE=false
+
+**IMPORTANT PERSISTENCE WARNING:** As currently configured, the Railway service has NO persistent volume. Registrations, SQLite sessions, video uploads and account activity stored in the container can disappear after restart/redeployment. Do not upload irreplaceable files or treat the system as production. Before real users, attach durable storage and backups and test restore. Hosting, volume storage, payouts, provider fees and moderation can all cost money. Zero out-of-pocket infrastructure costs cannot be promised.
+
+## Security
+
+Do not commit provider secrets, wallet keys, real databases or passwords. Store secrets server-side. Validate user identity and role for every privileged operation. Maintain content licensing, privacy protection and moderation procedures. Complete an independent security and payment compliance review before allowing public paid campaigns.
