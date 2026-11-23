@@ -1,0 +1,21 @@
+/* VIEWLY Stage / non-destructive experience upgrade. Uses original app state, APIs and event handlers. */
+(function(){
+  const stageNav=renderShell;
+  hero=function(){const logged=Boolean(S.user);return '<section class="stage-intro" aria-label="Viewly music discovery"><div class="stage-intro-inner"><div class="stage-kicker"><span>ARTIST PROMOTION / RAP · TRAP · DRILL</span></div><h1 class="stage-title">MAKE NOISE.<br><span>MAKE IT MOVE.</span></h1><p class="stage-desc">Discover independent releases, cut moments worth sharing and build real campaigns. Straight to the music.</p><div class="stage-actions"><button class="primary" data-page="releases">'+ico("play",15)+' Explore music</button><button class="outline" data-page="campaigns">'+ico("scissors",15)+' Clip campaigns</button><button class="outline" data-action="'+(logged?(isCreator()?"upload":"role"):"register")+'">'+ico("plus",15)+' '+(logged?"Publish":"Join Viewly")+'</button></div></div></section>';};
+  discover=function(){
+    const releases=S.releases.slice(0,9),campaigns=S.campaigns.slice(0,6);
+    const available=releases.length;
+    const intro='<div class="stage-topline"><span><span class="stage-pulse-dot"></span> VIEWLY / OPEN STAGE</span><span><strong>'+S.releases.length+'</strong> releases · <strong>'+S.campaigns.length+'</strong> funded campaigns</span></div>';
+    const music=section('Latest drops','Music uploaded by artists — no fabricated content',available?'<div class="live-releases">'+releases.map(releaseCard).join('')+'</div>':empty('The stage is open','No music has been published yet. The first real artist upload will appear here.',isCreator()?'upload':S.user?'role':'register',isCreator()?'Upload a release':'Get started'),'releases');
+    const clip=section('Clip bounties','Opportunities backed by verified funding',campaigns.length?'<div class="cards-grid">'+campaigns.map(campaignCard).join('')+'</div>':empty('No funded clip bounties','The moment an artist funds an eligible campaign, it will appear here. No fake rewards.',isCreator()?'create-campaign':'','',true),'campaigns');
+    return intro+hero()+'<div class="stat-strip">'+statPill('releases',String(S.releases.length),'Releases live')+statPill('bolt',String(S.campaigns.length),'Funded bounties')+statPill('scissors',String(S.user?(S.stats.clips||0):0),'Your exports')+'</div>'+music+clip+'<div class="aside-stack"><div class="aside-box"><span class="badge">ARTIST STUDIO</span><h3>Ready to drop?</h3><p>Upload an original music video and give clippers real moments to work with.</p><button class="primary tiny" data-page="studio">Open studio '+ico('arrow',14)+'</button></div><div class="aside-box"><span class="badge">CLIP DESK</span><h3>Find your next cut.</h3><p>Use artist-authorized source footage and export an actual MP4 clip.</p><button class="outline tiny" data-page="clips">Open clip desk '+ico('arrow',14)+'</button></div></div>';
+  };
+  renderShell=function(content){
+    const u=S.user;
+    const desktop=['discover','releases','campaigns','clips','studio','wallet'];
+    return '<div class="shell"><header class="topbar"><a href="/" class="brand" data-page="discover" aria-label="Viewly home">'+mark()+'</a><nav class="toplinks" aria-label="Main navigation">'+desktop.map(p=>navButton(p,({discover:'Home',releases:'Music',campaigns:'Campaigns',clips:'Clipping',studio:'Studio',wallet:'Wallet'})[p],p==='discover'?'discover':p==='releases'?'releases':p==='clips'?'scissors':p)).join('')+'</nav><div class="top-actions">'+(u?'<button class="userchip" data-page="profile"><span class="useravatar">'+esc(u.display_name[0]?.toUpperCase()||'V')+'</span><span class="usertext">'+esc(u.display_name)+'</span></button>':'<button class="outline tiny" data-action="login">Log in</button><button class="primary tiny" data-action="register">Join</button>')+'</div></header><main class="main" id="main-content">'+content+'<footer class="footer"><span>VIEWLY MUSIC / INDEPENDENT RAP & TRAP</span><span>Artist-authored content only. No invented campaigns.</span></footer></main></div>';
+  };
+  // The original module initializes its own real API fetch. Re-render against current state.
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{if(typeof render==='function')render();},{once:true});
+  else if(typeof render==='function')render();
+})();
