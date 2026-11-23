@@ -63,6 +63,7 @@ studioPage=function(){
  (Y.studio==='overview'?'<div class="v-workspace-two"><div>'+surface('Your releases',releases)+'</div><div>'+surface('Campaign status','<div class="v-operation-panel">'+row('Campaign drafts',String(all.filter(c=>c.status==='draft').length))+row('Active campaigns',String(all.filter(c=>c.status==='active').length))+row('Published releases',String(own.length))+'</div>')+'</div></div>'+surface('Campaign workspace',campaignRows(all)):
  Y.studio==='releases'?surface('Music catalogue',releases):surface('Your campaign portfolio',campaignRows(all)));
 };
+const originalProfile=profilePage;
 profilePage=function(){
  if(!S.user)return title('ACCOUNT','Settings','Account preferences and security controls.')+'<div class="v-studio-gate"><button class="v-button is-primary" data-action="login">Sign in to manage your account</button></div>';
  const original=originalProfile();
@@ -73,7 +74,6 @@ profilePage=function(){
  const payments='<div class="v-settings-panel"><h2>Payments</h2><p>Creator funding and payouts are not enabled. No payment details will be requested until a verified provider is configured.</p><button class="v-button is-subtle" disabled>Payment methods unavailable</button></div>';
  return title('MY ACCOUNT','Settings','Manage identity, privacy and account access.')+'<div class="v-settings-wrap"><nav class="v-settings-nav" aria-label="Settings">'+[['account','Account'],['security','Security'],['privacy','Privacy & data'],['payments','Payments']].map(([id,name])=>'<button class="'+(Y.settings===id?'is-current':'')+'" data-v-tab="settings:'+id+'">'+name+'</button>').join('')+'</nav><div class="v-settings-content">'+({account,security,privacy,payments}[Y.settings])+'</div></div>';
 };
-const originalProfile=profilePage;
 const originalDetail=campaignDetail;
 campaignDetail=function(id){
  const c=[...S.campaigns,...S.myCampaigns].find(x=>x.id===id);
