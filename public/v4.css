@@ -284,3 +284,10 @@ button:disabled{opacity:.44!important;cursor:not-allowed!important;transform:non
 }
 @media(max-width:380px){.v-campaign-grid{grid-template-columns:1fr}.v-campaign-cover{height:160px}.v-reward-bar strong{font-size:15px}.v-campaign-content h3{font-size:14px}.v-release-art{height:130px}.v-home-actions .v-button,.v-home-actions .v-action{font-size:10px;padding:0 8px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}.v-featured-disc>div{animation:none!important}}
+
+/* Progressive and restrained depth; app remains fully legible without JavaScript. */
+.v-reveal{opacity:0;transform:translateY(11px);transition:opacity .42s ease,transform .42s cubic-bezier(.21,.71,.19,1)}
+.v-reveal.v-in-view{opacity:1;transform:translateY(0)}
+.v-feature-object{transform:rotateX(var(--v-tilt-x,0deg)) rotateY(var(--v-tilt-y,0deg));transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+@media(prefers-reduced-motion:reduce){.v-reveal{opacity:1!important;transform:none!important;transition:none!important}.v-feature-object{transform:none!important}}
+@media(max-width:700px){.v-reveal{opacity:1;transform:none}}
