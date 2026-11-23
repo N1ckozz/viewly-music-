@@ -259,3 +259,22 @@ button.x-row:hover{background:#1f2635;border-color:#7c90ff}
  .x-palette-footer{font-size:8px}
 }
 @media(prefers-reduced-motion:reduce){.x-disc,.x-palette{animation:none!important}button,a{transition:none!important}}
+
+
+/* Genuine artist relationships and real activity */
+.x-artist-follow{display:flex;flex-direction:column;align-items:start;gap:8px;padding:12px 13px 15px;margin:0 0 19px;border:1px solid #35415c;background:linear-gradient(125deg,#252e4b,#151a28);border-radius:10px}
+.x-artist-follow .x-kicker{font-size:9px}
+.x-artist-follow #ux-follow-btn{min-width:130px}
+.x-artist-follow #ux-follow-btn.active{border-color:#8595ff!important;color:#d2d8ff!important;background:#303a64!important}
+.x-artist-follow small{font:500 10px var(--ux-mono);color:#abb6d0}
+.x-report-btn{margin-left:auto;opacity:.65}
+.x-report-btn:hover{opacity:1}
+.x-activity-loading{padding:25px 7px;color:#a5b1ca;font-size:12px}
+.x-activity-items{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.x-activity-item{display:flex;gap:13px;align-items:center;padding:13px;border:1px solid #333b4d;border-radius:9px;background:linear-gradient(120deg,#1e2431,#151923)}
+.x-activity-item .x-activity-icon{flex:none;display:grid;place-items:center;width:39px;height:39px;background:#303a67;border:1px solid #4f5e91;border-radius:9px;color:#b2c2ff}
+.x-activity-item>span:last-child{display:flex;gap:5px;flex-direction:column}
+.x-activity-item b{font-size:12px;line-height:1.4}
+.x-activity-item small{font-size:10px;color:#929db3}
+@media(max-width:840px){.x-quicklinks .x-button[data-ux-command="activity"]{display:flex;padding:0 12px}}
+@media(max-width:560px){.x-quicklinks .x-button[data-ux-command="activity"]{width:40px;padding:0;min-width:40px}.x-quicklinks .x-button[data-ux-command="activity"] span{display:none}.x-report-btn{margin-left:0}}
