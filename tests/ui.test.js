@@ -12,7 +12,7 @@ test('Viewly Experience renders real-data states and switches navigation and tab
  const events={};
  const S={page:'studio',user:{id:'u1',role:'artist',display_name:'Artist'},stats:{releases:0,plays:0,clips:0,campaigns:0},config:{},releases:[],campaigns:[],myCampaigns:[],myClips:[],wallet:{entries:[],earned_cents:0,available_to_withdraw_cents:0},q:'',genre:'All'};
  const document={addEventListener(n,f){(events[n]??=[]).push(f)},querySelector(){return null},createElement(){return {innerHTML:'',querySelector(){return null}}},body:{append(){}},title:''};
- const ctx={document,S,window:{scrollTo(){}},location:{search:'',origin:'https://viewly.example'},navigator:{},ico:()=>'<svg/>',esc:x=>String(x||''),eur:c=>'€'+c/100,date:x=>String(x),
+ const ctx={document,S,URL,URLSearchParams,window:{scrollTo(){}},location:{search:'',origin:'https://viewly.example'},navigator:{},ico:()=>'<svg/>',esc:x=>String(x||''),eur:c=>'€'+c/100,date:x=>String(x),
   isCreator:()=>['artist','label','admin'].includes(S.user?.role),
   renderShell:x=>'<main class="main" id="main-content">'+x+'</main>',render(){},refresh:async()=>{},
   discover:()=>'<section class="stage-intro"></section>',releasesPage:()=>'',campaignsPage:()=>'',studioPage:()=>'',clipsPage:()=>'',walletPage:()=>'',clipEditor:()=>'',releaseCard:()=>'<article><div><div class="card-footer"></div></div></article>',campaignCard:()=>'<article></article>',authModal(){},gate:x=>'<div>'+x+'</div>',showOverlay(){},toast(){},playModal(){},section:(h,s,c)=>'<section><h2>'+h+'</h2>'+c+'</section>'
