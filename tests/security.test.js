@@ -1,0 +1,34 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+test('payment safety gate, browser origin controls, upload rights and security headers',async t=>{
+ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'viewly-sec-'));
+ const port=50000+Math.floor(Math.random()*9000);
+ const base=`http://127.0.0.1:${port}`;
+ const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:String(port),APP_URL:base,VIEWLY_DATA_DIR:path.join(tmp,'db'),VIEWLY_UPLOAD_DIR:path.join(tmp,'uploads'),VIEWLY_PAID_MARKETPLACE_ENABLED:'true',VIEWLY_PAYOUTS_OPERATIONAL:'true',VIEWLY_LEGAL_REVIEW_COMPLETE:'true',STRIPE_SECRET_KEY:'sk_test_invalid',STRIPE_WEBHOOK_SECRET:'whsec_invalid'},stdio:'pipe'});
+ t.after(()=>{child.kill();fs.rmSync(tmp,{recursive:true,force:true});});
+ let ok=false;for(let i=0;i<70;i++){await new Promise(r=>setTimeout(r,100));try{if((await fetch(base+'/api/health')).ok){ok=true;break;}}catch{}}
+ assert.ok(ok);
+ const config=await (await fetch(base+'/api/config')).json();
+ assert.equal(config.stripe_ready,false);
+ assert.equal(config.paid_marketplace_enabled,false);
+ const homepage=await fetch(base+'/');
+ assert.equal(homepage.status,200);
+ assert.match(homepage.headers.get('content-security-policy'),/script-src 'self'/);
+ const cross=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json',origin:'https://evil.invalid'},body:'{}'});
+ assert.equal(cross.status,403);
+ const reg=await fetch(base+'/api/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'security@example.test',username:'security_artist',display_name:'Security Artist',password:'password-long-123',role:'artist'})});
+ assert.equal(reg.status,201);
+ const session=reg.headers.get('set-cookie').split(';')[0];
+ const fd=new FormData();fd.set('title','No rights upload');fd.set('genre','Rap');fd.set('video',new Blob(['invalid'],{type:'video/mp4'}),'bad.mp4');
+ const noRights=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session},body:fd});
+ assert.equal(noRights.status,422);
+ fd.set('rights','on');const invalidVideo=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session},body:fd});
+ assert.equal(invalidVideo.status,415);
+ const pay=await fetch(base+'/api/payments/stripe/checkout',{method:'POST',headers:{cookie:session,'content-type':'application/json'},body:'{}'});
+ assert.equal(pay.status,503);
+});

@@ -1,0 +1,10 @@
+# Real user data and secrets must not be committed
+data/*
+!data/.gitkeep
+uploads/*
+!uploads/.gitkeep
+.env
+*.log
+node_modules/
+preview-*.png
+.DS_Store

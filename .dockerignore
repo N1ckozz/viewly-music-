@@ -1,0 +1,10 @@
+.git
+.env
+node_modules
+*.log
+preview-*.png
+uploads/*
+data/*
+tests
+*.zip
+.DS_Store
