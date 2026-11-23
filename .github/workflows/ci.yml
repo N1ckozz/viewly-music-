@@ -1,0 +1,27 @@
+name: Viewly checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  lint-and-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install video test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Validate source syntax
+        run: |
+          node --check server.js
+          node --check public/app.js
+          node --check public/stage.js
+          node --check public/experience.js
+      - name: Real backend integration tests
+        run: npm test
