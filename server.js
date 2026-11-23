@@ -34,6 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_releases_created ON releases(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_submissions_campaign ON submissions(campaign_id,created_at DESC);
 `);
+
+db.exec(\`CREATE TABLE IF NOT EXISTS artist_follows(follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,artist_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,PRIMARY KEY(follower_id,artist_id));
+CREATE INDEX IF NOT EXISTS idx_artist_follows_artist ON artist_follows(artist_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS content_reports(id TEXT PRIMARY KEY,release_id TEXT NOT NULL REFERENCES releases(id),reporter_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(release_id,reporter_id));\`);
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -130,6 +134,42 @@ async function handle(req,res){
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',stripe_ready:STRIPE_READY,google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
+
+ const artistMatch=pathname.match(/^\/api\/artists\/([a-f0-9-]{36})(?:\/(follow))?$/);
+ if(artistMatch){
+  const aid=artistMatch[1],operation=artistMatch[2],actor=sessionUser(req);
+  const artist=db.prepare("SELECT id,username,display_name,role,bio,created_at FROM users WHERE id=? AND role IN ('artist','label','admin')").get(aid);
+  if(!artist)throw fail(404,'Artist not found.');
+  if(operation==='follow'&&req.method==='POST'){
+   const user=requireUser(req);if(user.id===aid)throw fail(422,'You cannot follow yourself.');
+   const existing=db.prepare('SELECT 1 FROM artist_follows WHERE follower_id=? AND artist_id=?').get(user.id,aid);
+   if(existing)db.prepare('DELETE FROM artist_follows WHERE follower_id=? AND artist_id=?').run(user.id,aid);
+   else db.prepare('INSERT INTO artist_follows VALUES (?,?,?)').run(user.id,aid,now());
+   broadcast('follow');
+  }else if(operation||req.method!=='GET')throw fail(405,'Method not allowed.');
+  const followers=db.prepare('SELECT count(*) AS n FROM artist_follows WHERE artist_id=?').get(aid).n;
+  const following=actor?!!db.prepare('SELECT 1 FROM artist_follows WHERE follower_id=? AND artist_id=?').get(actor.id,aid):false;
+  const releases=db.prepare('SELECT count(*) AS n FROM releases WHERE owner_id=?').get(aid).n;
+  return send(res,200,{artist:{...artist,followers,releases,following}});
+ }
+ if(pathname==='/api/following'&&req.method==='GET'){
+  const user=requireUser(req);
+  const artists=db.prepare('SELECT u.id,u.username,u.display_name,u.bio,f.created_at AS followed_at FROM artist_follows f JOIN users u ON u.id=f.artist_id WHERE f.follower_id=? ORDER BY f.created_at DESC LIMIT 100').all(user.id);
+  return send(res,200,{artists});
+ }
+ if(pathname==='/api/activity'&&req.method==='GET'){
+  const user=requireUser(req);
+  const comments=db.prepare('SELECT c.id,c.created_at,u.display_name AS actor,r.title AS release_title FROM release_comments c JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.user_id WHERE r.owner_id=? AND c.user_id<>? ORDER BY c.created_at DESC LIMIT 20').all(user.id,user.id).map(x=>({id:'comment-'+x.id,type:'comment',created_at:x.created_at,title:x.actor+' commented on '+x.release_title}));
+  const follows=db.prepare('SELECT f.follower_id AS id,f.created_at,u.display_name AS actor FROM artist_follows f JOIN users u ON u.id=f.follower_id WHERE f.artist_id=? ORDER BY f.created_at DESC LIMIT 20').all(user.id).map(x=>({id:'follow-'+x.id,type:'follow',created_at:x.created_at,title:x.actor+' followed you'}));
+  const releases=db.prepare('SELECT r.id,r.title,r.created_at,u.display_name AS actor FROM releases r JOIN artist_follows f ON r.owner_id=f.artist_id JOIN users u ON u.id=r.owner_id WHERE f.follower_id=? ORDER BY r.created_at DESC LIMIT 20').all(user.id).map(x=>({id:'release-'+x.id,type:'release',created_at:x.created_at,title:x.actor+' released '+x.title,release_id:x.id}));
+  const items=[...comments,...follows,...releases].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,30);
+  return send(res,200,{items});
+ }
+ if(pathname==='/api/admin/reports'&&req.method==='GET'){
+  const user=requireUser(req);if(user.role!=='admin')throw fail(403,'Administrator access required.');
+  const reports=db.prepare('SELECT x.id,x.reason,x.details,x.created_at,x.release_id,r.title AS release_title,u.username AS reporter FROM content_reports x JOIN releases r ON r.id=x.release_id JOIN users u ON u.id=x.reporter_id ORDER BY x.created_at DESC LIMIT 100').all();
+  return send(res,200,{reports});
+ }
  if(req.method==='GET'&&pathname==='/api/me'){const u=sessionUser(req);return send(res,200,{user:u,stats:statsFor(u)});}
  if(pathname==='/api/register'&&req.method==='POST'){
   limit(req,'auth',8,300000);const b=await json(req);const email=clean(b.email,254).toLowerCase(),username=clean(b.username,30).toLowerCase(),display=clean(b.display_name,80),password=String(b.password||''),role=clean(b.role,10);
@@ -145,6 +185,16 @@ async function handle(req,res){
  }
  const releaseMatch=pathname.match(/^\/api\/releases\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(releaseMatch){const rid=releaseMatch[1],action=releaseMatch[2],u=sessionUser(req);const r=getRelease(rid,u);if(!r)throw fail(404,'Release not found.');if(!action&&req.method==='GET')return send(res,200,{release:r});
+
+  if(action==='report'&&req.method==='POST'){
+   const actor=requireUser(req),b=await json(req),reason=clean(b.reason,32),details=clean(b.details,600);
+   if(!['copyright','harassment','misleading','other'].includes(reason))throw fail(422,'Select a valid report reason.');
+   const prior=db.prepare('SELECT id FROM content_reports WHERE release_id=? AND reporter_id=?').get(rid,actor.id);
+   if(prior)return send(res,200,{ok:true,status:'already_submitted'});
+   db.prepare('INSERT INTO content_reports VALUES (?,?,?,?,?,?)').run(id(),rid,actor.id,reason,details,now());
+   broadcast('content-report');
+   return send(res,201,{ok:true,status:'recorded',note:'Queued for administrator review. No automatic takedown claimed.'});
+  }
   if(action==='comments'&&req.method==='GET')return send(res,200,{comments:db.prepare('SELECT c.id,c.body,c.created_at,u.display_name,u.username FROM release_comments c JOIN users u ON u.id=c.user_id WHERE c.release_id=? ORDER BY c.created_at DESC LIMIT 100').all(rid)});
   if(action==='comments'&&req.method==='POST'){const actor=requireUser(req);const b=await json(req);const body=clean(b.body,600);if(body.length<2)throw fail(422,'Write a comment.');const cid=id();db.prepare('INSERT INTO release_comments VALUES (?,?,?,?,?)').run(cid,rid,actor.id,body,now());broadcast('comment');return send(res,201,{ok:true,id:cid});}
   if(action==='like'&&req.method==='POST'){const actor=requireUser(req);if(db.prepare('SELECT 1 FROM release_likes WHERE release_id=? AND user_id=?').get(rid,actor.id))db.prepare('DELETE FROM release_likes WHERE release_id=? AND user_id=?').run(rid,actor.id);else db.prepare('INSERT INTO release_likes VALUES (?,?)').run(rid,actor.id);broadcast('release-stats');return send(res,200,{release:getRelease(rid,actor)});}
