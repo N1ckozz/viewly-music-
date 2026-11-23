@@ -20,6 +20,30 @@ discover=function(){
  const releasePicks=realTop.length?'<div class="x-featured-strip">'+realTop.map(r=>'<button class="x-featured" data-action="play" data-id="'+r.id+'">'+(r.cover_url?'<img src="'+esc(r.cover_url)+'" loading="lazy" alt="">':'<span class="x-featured-fallback">'+ico('releases',30)+'</span>')+'<span><strong>'+esc(r.title)+'</strong><small>'+esc(r.artist_name)+'</small></span>'+ico('play',16)+'</button>').join('')+'</div>':'';
  return strip+releasePicks+base;
 };
+
+const oldReleaseCard=releaseCard;
+releaseCard=function(r){
+ const raw=oldReleaseCard(r);
+ const share='<button class="outline tiny x-share" type="button" data-ux-share="'+esc(r.id)+'" aria-label="Share '+esc(r.title)+'">'+ico('arrow',13)+' Share</button>';
+ return raw.replace(/<\/div><\/div><\/article>$/,share+'</div></div></article>');
+};
+async function shareRelease(id){
+ const r=S.releases.find(x=>x.id===id);if(!r)return toast('Release no longer exists.',true);
+ const url=new URL('/',location.origin);url.searchParams.set('release',r.id);
+ try{
+  if(navigator.share){await navigator.share({title:r.title+' — '+r.artist_name,text:'Watch the official release on Viewly.',url:url.href});}
+  else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(url.href);toast('Real release link copied.');}
+  else{showOverlay('<h2>Share release</h2><p>Copy the release URL:</p><input readonly value="'+esc(url.href)+'" style="width:100%">');}
+ }catch(e){if(e.name!=='AbortError')toast('Sharing is unavailable on this device.',true)}
+}
+let deeplinkOpened=false;
+const oldRefresh=refresh;
+refresh=async function(...args){await oldRefresh(...args);if(!deeplinkOpened){
+ const rid=new URLSearchParams(location.search).get('release');
+ if(rid){deeplinkOpened=true;const item=S.releases.find(r=>r.id===rid);if(item)playModal(item);else toast('That release is no longer available.',true)}
+}};
+document.addEventListener('click',e=>{const btn=e.target.closest('[data-ux-share]');if(btn){e.preventDefault();e.stopPropagation();shareRelease(btn.dataset.uxShare)}},true);
+
 const originalReleases=releasesPage;
 releasesPage=function(){
  const list=S.releases.filter(r=>(S.genre==='All'||r.genre===S.genre)&&(!S.q||String(r.title+' '+r.artist_name+' '+r.genre).toLowerCase().includes(S.q.toLowerCase())));
@@ -94,6 +118,8 @@ function updateClipControls(changed){
 const originalRender=render;
 render=function(){
  originalRender();
+ const h=document.querySelector('.stage-intro');
+ if(h&&!h.querySelector('.x-hero-object'))h.insertAdjacentHTML('beforeend','<div class="x-hero-object" aria-hidden="true"><div class="x-ring"></div><div class="x-ring two"></div><div class="x-disc"></div><div class="x-disc-center"></div></div>');
  const active=document.querySelector('.x-tab.selected');
  if(active&&active.getAttribute('aria-selected')!=='true')active.setAttribute('aria-selected','true');
  const brand=document.querySelector('.topbar .brand');
