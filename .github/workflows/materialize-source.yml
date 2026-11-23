@@ -1,0 +1,34 @@
+name: Materialize Viewly source
+on:
+  push:
+    paths:
+      - ".github/workflows/materialize-source.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  unpack-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract original Viewly backend and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/viewly-source
+          unzip -q Viewly_Music_Railway_Staging.zip -d /tmp/viewly-source
+          test -f /tmp/viewly-source/viewly-music/server.js
+          test -f /tmp/viewly-source/viewly-music/public/app.js
+          # Preserve the versioned UI work and Railway Dockerfile that are already in GitHub.
+          rsync -a --ignore-existing \
+            --exclude 'data/*' --exclude 'uploads/*' --exclude '.env' \
+            /tmp/viewly-source/viewly-music/ ./
+          git config user.name "viewly-build-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- server.js package.json public/app.js public/styles.css public/index.html tests .gitignore .dockerignore README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "Extract real Viewly source from original archive"
+            git push
+          fi
