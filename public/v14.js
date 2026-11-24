@@ -24,6 +24,7 @@ function step(n){
  f.querySelector('[data-v14-back]').hidden=n===0||(n===2&&draft.cid&&f.elements.title.disabled);
  f.querySelector('[data-v14-next]').hidden=n===6;
  f.querySelector('[data-v14-next]').textContent=n===5?'Save & review final checkout':'Continue';
+ if(n===4){const privateMode=!!f.elements.invite_only?.checked;for(const x of f.querySelectorAll('input[name=promo]')){if(privateMode)x.checked=false;x.disabled=privateMode||!V.catalog.find(p=>p.id===x.value)?.available;}if(privateMode)state('Invite-only campaign: public promotions are disabled.');}
  if(n===5)preview(f);
  updateEstimate(f);
 }
@@ -31,7 +32,7 @@ async function getCatalog(){const x=await api('/promotions/catalog');V.catalog=x
 function wizardHTML(releases,info,catalog){
  const c=info?.campaign,b=info?.branding;
  const locked=!!c;
- const basics='<div class="v14-grid"><label>Original music release<select name="release_id" required>'+releases.map(r=>'<option value="'+e(r.id)+'">'+e(r.title)+'</option>').join('')+'</select></label>'+field('title','Campaign title','text','minlength="3" maxlength="100" required')+'</div>'+ta('brief','Full brief & deliverables','minlength="60" maxlength="4500" required rows="5"')+field('spotify_track_url','Spotify track (optional)','url')+field('mandatory_hashtags','Mandatory hashtags','text','maxlength="180"')+field('sample_caption','Suggested caption','text','maxlength="280"')+ta('rules','Creative rules','maxlength="2000" rows="3"')+ta('prohibited_content','Prohibited edits','maxlength="800" rows="2"');
+ const basics='<div class="v14-grid"><label>Original music release<select name="release_id" required>'+releases.map(r=>'<option value="'+e(r.id)+'">'+e(r.title)+'</option>').join('')+'</select></label>'+field('title','Campaign title','text','minlength="3" maxlength="100" required')+'</div>'+ta('brief','Full brief & deliverables','minlength="60" maxlength="4500" required rows="5"')+field('spotify_track_url','Spotify track (optional)','url')+field('mandatory_hashtags','Mandatory hashtags','text','maxlength="180"')+field('sample_caption','Suggested caption','text','maxlength="280"')+ta('rules','Creative rules','maxlength="2000" rows="3"')+ta('prohibited_content','Prohibited edits','maxlength="800" rows="2"')+'<label class="v14-check"><input type="checkbox" name="invite_only" '+(c?.invite_only?'checked ':'')+(locked?'disabled':'')+'> Invite-only campaign · visible only to you and accepted invitees. Public promotions and sharing are disabled.</label>';
  const rewards='<div class="v14-grid">'+field('rate_eur_per_1000','CPM (€ / 1,000 TikTok views)','number','min=".5" max="10" step=".01" value="1" required')+field('budget_eur','Clipper reward pool (€)','number','min="10" max="100000" step=".01" value="100" required')+field('max_per_clip_eur','Maximum per clip (€)','number','min=".5" step=".01" value="25" required')+field('min_views','Minimum views','number','min="100" max="1000000" step="1" value="1000" required')+field('tracking_days','Tracking days','number','min="7" max="60" value="30" required')+'</div><p>Promotion fees never reduce the clipper reward pool.</p>';
  const branding='<div class="v14-grid">'+['icon','background'].map(n=>'<label class="v14-upload"><b>'+(n==='icon'?'Campaign icon · 1:1':'Background · 16:9')+'</b><span>'+(n==='icon'?'1024 × 1024 minimum · 10 MB':'1600 × 900 minimum · 15 MB')+'</span><input name="'+n+'" type="file" accept="image/jpeg,image/png,image/webp" '+(!b?.[n+'_url']?'required':'')+'><small data-v14-image="'+n+'">'+(b?.[n+'_url']?'Saved image ✓':'JPEG, PNG or WebP')+'</small></label>').join('')+'</div>'+field('headline','Promo headline','text','maxlength="120"');
  const kit='<label class="v14-upload">Creative pack (optional)<input name="assets" type="file" multiple accept="video/mp4,video/webm,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,application/pdf"><small>Up to 16 assets / 200 MB. Original release is included.</small></label><label class="v14-check"><input name="rights_confirmed" type="checkbox" required '+(locked?'checked disabled':'')+'> I have the rights to distribute the music and uploaded assets, and agree that recorded evidence cannot be erased later.</label>';
@@ -74,7 +75,7 @@ async function save(f){
  if(!draft.cid){
   const body={};for(const k of ['release_id','title','brief','spotify_track_url','mandatory_hashtags','sample_caption','rules','prohibited_content'])body[k]=f.elements[k].value;
   for(const k of ['rate_eur_per_1000','max_per_clip_eur','budget_eur','min_views','tracking_days'])body[k]=Number(f.elements[k].value);
-  body.rights_confirmed=f.elements.rights_confirmed.checked;
+  body.rights_confirmed=f.elements.rights_confirmed.checked;body.invite_only=!!f.elements.invite_only?.checked;
   state('Creating private campaign draft…');const x=await api('/campaigns/v14','POST',body);draft.cid=x.campaign.id;draft.title=body.title;
   for(const x of f.querySelectorAll('.v14-step:nth-child(-n+2) input,.v14-step:nth-child(-n+2) textarea,.v14-step:nth-child(-n+2) select'))x.disabled=true;
   f.elements.rights_confirmed.disabled=true;
