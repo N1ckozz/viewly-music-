@@ -21,7 +21,7 @@ function chart(d){
 }
 function trending(d){
  const rows=d.trending||[];
- return rows.length?'<div class="v13-ranking">'+rows.map((x,i)=>'<button type="button" data-action="play" data-id="'+esc(x.id)+'"><span class="v13-rank">'+String(i+1).padStart(2,'0')+'</span><span class="v13-rank-copy"><b>'+esc(x.title)+'</b><small>'+esc(x.artist_name)+' · '+esc(x.genre)+'</small></span><strong>'+fmt(x.views)+'</strong>'+ic('play',15)+'</button>').join('')+'</div>':empty('No ranked releases yet','Rankings appear when published tracks receive recorded plays.',btn('Browse music','page','releases','releases'));
+ return rows.length?'<div class="v13-ranking">'+rows.map((x,i)=>'<button type="button" data-v13-play="'+esc(x.id)+'"><span class="v13-rank">'+String(i+1).padStart(2,'0')+'</span><span class="v13-rank-copy"><b>'+esc(x.title)+'</b><small>'+esc(x.artist_name)+' · '+esc(x.genre)+'</small></span><strong>'+fmt(x.views)+'</strong>'+ic('play',15)+'</button>').join('')+'</div>':empty('No ranked releases yet','Rankings appear when published tracks receive recorded plays.',btn('Browse music','page','releases','releases'));
 }
 function campaigns(p){
  const rows=p.campaigns||[];
@@ -87,6 +87,18 @@ async function load(force=false){
 const baseRender=render;
 render=function(){baseRender();if(S.page==='discover'&&(H.key!==identity()||!H.updated||Date.now()-H.updated>=60000)&&!H.busy)void load();};
 document.addEventListener('click',e=>{
+ const ranked=e.target.closest('[data-v13-play]');
+ if(ranked){
+  e.preventDefault();e.stopImmediatePropagation();
+  const id=ranked.dataset.v13Play;
+  if(!/^[a-f0-9-]{36}$/.test(id))return;
+  void api('/releases/'+id).then(({release})=>{
+   const i=S.releases.findIndex(r=>r.id===id);
+   if(i<0)S.releases.push(release);else S.releases[i]=release;
+   playModal(release);
+  }).catch(errorToast);
+  return;
+ }
  const period=e.target.closest('[data-v13-period]'),refresh=e.target.closest('[data-v13-refresh]');
  if(!period&&!refresh)return;
  e.preventDefault();e.stopImmediatePropagation();
