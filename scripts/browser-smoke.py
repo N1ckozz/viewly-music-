@@ -181,7 +181,7 @@ with sync_playwright() as p:
             ('cinematic-fallback',{'width':390,'height':844},True,True)]:
             ctx=browser.new_context(viewport=viewport,reduced_motion='no-preference')
             ctx.add_init_script("""window.__v17RevealSeen=false;
-                new MutationObserver(()=>{if(document.querySelector('#app.v17-reveal'))window.__v17RevealSeen=true;})
+                new MutationObserver(()=>{if(document.querySelector('#app.v17-reveal')&&!window.__v17RevealSeen){window.__v17RevealSeen=true;document.documentElement.dataset.v17RevealSeen='true';}})
                     .observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});""")
             if fallback:
                 ctx.add_init_script("const get=HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl'?null:get.call(this,type,...args)}")
@@ -211,7 +211,7 @@ with sync_playwright() as p:
                 else:
                     expect(intro).to_have_attribute('data-phase','2',timeout=5000)
                     page.screenshot(path=str(out/f'{name}-intro.png'))
-                page.wait_for_function('window.__v17RevealSeen === true',timeout=8000)
+                expect(page.locator('html')).to_have_attribute('data-v17-reveal-seen','true',timeout=8000)
                 expect(page.locator('#app')).not_to_have_attribute('inert','')
                 expect(intro).to_have_count(0,timeout=4000)
                 expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible()
