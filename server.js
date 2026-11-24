@@ -49,6 +49,10 @@ const PAYOUT_PROVIDER_IMPLEMENTED=false; // Must be changed by an audited, genui
 const PAYMENT_LAUNCH_ENABLED=PAYOUT_PROVIDER_IMPLEMENTED && process.env.VIEWLY_PAID_MARKETPLACE_ENABLED==='true' && process.env.VIEWLY_PAYOUTS_OPERATIONAL==='true' && process.env.VIEWLY_LEGAL_REVIEW_COMPLETE==='true' && APP_URL.startsWith('https://');
 const STRIPE_READY=PAYMENT_LAUNCH_ENABLED&&!!STRIPE_KEY&&!!STRIPE_WEBHOOK_SECRET;
 const execFileAsync=promisify(execFile);
+const scryptAsync=promisify(crypto.scrypt);
+const HASH_SETTINGS={N:131072,r:8,p:1,maxmem:256*1024*1024};
+const SESSION_DAYS=7;
+const DUMMY_SALT='12763eccb1a924df7ba553146edf6ccd';
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 const id=()=>crypto.randomUUID();
 const now=()=>new Date().toISOString();
@@ -63,12 +67,32 @@ const statements={
   byGoogle:db.prepare('SELECT * FROM users WHERE google_sub=?'),
   ownerOfRelease:db.prepare('SELECT owner_id FROM releases WHERE id=?'),
 };
-function hashPassword(password){const salt=crypto.randomBytes(16).toString('hex');return `${salt}:${crypto.scryptSync(password,salt,64).toString('hex')}`;}
-function validPassword(password,stored){if(!stored) return false;const [salt,h]=stored.split(':');if(!salt||!h)return false;const a=crypto.scryptSync(password,salt,64);const b=Buffer.from(h,'hex');return a.length===b.length&&crypto.timingSafeEqual(a,b);}
-function cookieValue(req,name){const cookie=req.headers.cookie||'';const m=cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]+)'));return m?decodeURIComponent(m[1]):null;}
+async function hashPassword(password){
+ const salt=crypto.randomBytes(16).toString('hex');
+ const key=await scryptAsync(password,salt,64,HASH_SETTINGS);
+ return 's2$'+salt+'$'+key.toString('hex');
+}
+async function validPassword(password,stored){
+ let salt=DUMMY_SALT,hash='',legacy=false;
+ if(typeof stored==='string'&&stored.startsWith('s2$')){
+  const parts=stored.split('$');
+  if(parts.length===3&&/^[a-f0-9]{32}$/.test(parts[1])&&/^[a-f0-9]{128}$/.test(parts[2])){
+   salt=parts[1];hash=parts[2];
+  }
+ }else if(typeof stored==='string'){
+  const parts=stored.split(':');
+  if(parts.length===2&&/^[a-f0-9]{32}$/.test(parts[0])&&/^[a-f0-9]{128}$/.test(parts[1])){
+   salt=parts[0];hash=parts[1];legacy=true;
+  }
+ }
+ const key=await scryptAsync(password,salt,64,legacy?{N:16384,r:8,p:1,maxmem:64*1024*1024}:HASH_SETTINGS);
+ const reference=hash?Buffer.from(hash,'hex'):Buffer.alloc(64);
+ return crypto.timingSafeEqual(key,reference)&&!!hash;
+}
+function cookieValue(req,name){const cookie=req.headers.cookie||'';const m=cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]+)'));if(!m)return null;try{return decodeURIComponent(m[1])}catch{return null}}
 function sessionUser(req){const token=cookieValue(req,'viewly_session');if(!token)return null;const row=db.prepare('SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?').get(sha(token),Date.now());return row?statements.getUser.get(row.user_id):null;}
-function cookie(name,value,maxAge){return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
-function createSession(res,userId){const token=crypto.randomBytes(32).toString('base64url');const expires=Date.now()+30*86400*1000;db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(sha(token),userId,expires,Date.now());const existing=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),cookie('viewly_session',token,30*86400)]);}
+function cookie(name,value,maxAge){const sameSite=name==='viewly_session'?'Strict':'Lax';return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
+function createSession(res,userId){const token=crypto.randomBytes(32).toString('base64url');const expires=Date.now()+SESSION_DAYS*86400*1000;db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(sha(token),userId,expires,Date.now());const existing=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),cookie('viewly_session',token,SESSION_DAYS*86400)]);}
 function send(res,status,data,extra={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extra});res.end(JSON.stringify(data));}
 function error(res,status,msg){send(res,status,{error:msg});}
 const fail=(status,msg)=>Object.assign(new Error(msg),{status});
@@ -88,10 +112,42 @@ function getRelease(id,u){const r=db.prepare(`SELECT r.id,r.owner_id,r.title,r.d
 function publicCampaign(r){return {...r,remaining_cents:Math.max(0,r.paid_cents-r.spent_cents),eligible_spots:Math.floor(Math.max(0,r.paid_cents-r.spent_cents)/r.reward_cents)};}
 function campaignRows(where='',args=[]){return db.prepare(`SELECT c.*,u.username,u.display_name AS artist_name,r.title AS release_title,r.cover_name,r.file_name FROM campaigns c JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id ${where} ORDER BY c.created_at DESC LIMIT 100`).all(...args).map(r=>({...publicCampaign(r),cover_url:r.cover_name?`/media/${r.cover_name}`:null,video_url:`/media/${r.file_name}`}));}
 function stripSensitive(user){if(!user)return null;return {id:user.id,email:user.email,username:user.username,display_name:user.display_name,role:user.role,bio:user.bio,created_at:user.created_at};}
-function requireSameOrigin(req){if(['POST','PATCH','DELETE','PUT'].includes(req.method)){const origin=req.headers.origin;const fetchSite=req.headers['sec-fetch-site'];if(origin&&origin!==APP_URL)throw fail(403,'Cross-origin request blocked.');if(fetchSite==='cross-site')throw fail(403,'Cross-site request blocked.');}}
+function requireSameOrigin(req){
+ if(!['POST','PATCH','DELETE','PUT'].includes(req.method))return;
+ if(req.url?.split('?')[0]==='/api/stripe/webhook')return; // Signed Stripe webhook, no browser cookie auth.
+ const origin=req.headers.origin;
+ const site=req.headers['sec-fetch-site'];
+ if(origin&&origin!==APP_URL)throw fail(403,'Cross-origin request blocked.');
+ if(site&&site!=='same-origin'&&site!=='none')throw fail(403,'Cross-site request blocked.');
+ // Require a non-simple request header; CORS is intentionally not enabled.
+ if(req.url?.startsWith('/api/')&&req.headers['x-viewly-request']!=='1')throw fail(403,'Protected request header required.');
+}
 const liveClients=new Set();
 function broadcast(kind){const msg=`data: ${JSON.stringify({kind,at:now()})}\n\n`;for(const client of liveClients){try{client.write(msg)}catch{liveClients.delete(client)}}}
-const rate=new Map();setInterval(()=>{const t=Date.now();for(const [k,v] of rate)if(v.until<t)rate.delete(k);},60000).unref();function limit(req,key,cap=25,windowMs=60000){let ip=req.socket.remoteAddress||'unknown';let k=ip+':'+key;let v=rate.get(k);if(!v||Date.now()>v.until)v={count:0,until:Date.now()+windowMs};v.count++;rate.set(k,v);if(v.count>cap)throw fail(429,'Too many attempts. Try again shortly.');}
+const rate=new Map();
+db.exec('CREATE TABLE IF NOT EXISTS auth_throttle(key TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL)');
+setInterval(()=>{
+ const t=Date.now();
+ for(const [k,v] of rate)if(v.until<t)rate.delete(k);
+ db.prepare('DELETE FROM auth_throttle WHERE reset_at<?').run(t);
+ db.prepare('DELETE FROM sessions WHERE expires_at<?').run(t);
+ db.prepare('DELETE FROM oauth_states WHERE expires_at<?').run(t);
+},60000).unref();
+function limit(req,key,cap=25,windowMs=60000){
+ const ip=req.socket.remoteAddress||'unknown',k=ip+':'+key;
+ let v=rate.get(k);
+ if(!v||Date.now()>v.until)v={count:0,until:Date.now()+windowMs};
+ v.count++;rate.set(k,v);
+ if(rate.size>15000){for(const key of rate.keys()){rate.delete(key);if(rate.size<12000)break;}}
+ if(v.count>cap)throw fail(429,'Too many attempts. Try again shortly.');
+}
+function limitAccount(action,email,max=8,windowMs=15*60*1000){
+ const key=sha(action+':'+email.toLowerCase()),t=Date.now();
+ const row=db.prepare('SELECT count,reset_at FROM auth_throttle WHERE key=?').get(key);
+ if(!row||row.reset_at<=t){db.prepare('INSERT OR REPLACE INTO auth_throttle VALUES (?,?,?)').run(key,1,t+windowMs);return;}
+ db.prepare('UPDATE auth_throttle SET count=count+1 WHERE key=?').run(key);
+ if(row.count>=max)throw fail(429,'Too many sign-in attempts. Try again later.');
+}
 function baseUrl(req){return APP_URL;}
 async function googleStart(req,res){if(!GOOGLE_ID||!GOOGLE_SECRET)throw fail(503,'Google sign-in is not configured.');const state=crypto.randomBytes(32).toString('base64url');db.prepare('INSERT INTO oauth_states VALUES (?,?)').run(sha(state),Date.now()+600000);res.setHeader('Set-Cookie',cookie('viewly_oauth_state',state,600));const q=new URLSearchParams({client_id:GOOGLE_ID,redirect_uri:APP_URL+'/auth/google/callback',response_type:'code',scope:'openid email profile',state,access_type:'online',prompt:'select_account'});res.writeHead(302,{Location:'https://accounts.google.com/o/oauth2/v2/auth?'+q});res.end();}
 async function googleCallback(req,res,url){if(url.searchParams.get('error'))throw fail(400,'Google sign-in was cancelled.');const state=url.searchParams.get('state')||'';if(!state||state!==cookieValue(req,'viewly_oauth_state'))throw fail(403,'Google sign-in session mismatch.');res.setHeader('Set-Cookie',cookie('viewly_oauth_state','',0));const entry=db.prepare('SELECT * FROM oauth_states WHERE state_hash=? AND expires_at>?').get(sha(state),Date.now());if(!entry)throw fail(403,'Invalid Google session state.');db.prepare('DELETE FROM oauth_states WHERE state_hash=?').run(sha(state));const code=url.searchParams.get('code');if(!code)throw fail(400,'Missing authentication code.');const tokenRes=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GOOGLE_ID,client_secret:GOOGLE_SECRET,redirect_uri:APP_URL+'/auth/google/callback',grant_type:'authorization_code'})});if(!tokenRes.ok)throw fail(502,'Google token exchange failed.');const tk=await tokenRes.json();const infoRes=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tk.access_token}});if(!infoRes.ok)throw fail(502,'Google profile verification failed.');const info=await infoRes.json();if(!info.email_verified||!info.sub)throw fail(403,'Google email is not verified.');let user=statements.byGoogle.get(info.sub);if(!user){const email=clean(info.email.toLowerCase(),254);user=statements.byEmail.get(email);if(user){throw fail(409,'This email already has a Viewly account. Sign in with your existing method before linking Google.');}else{let username=clean(info.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(),22)||'artist';while(db.prepare('SELECT 1 FROM users WHERE username=?').get(username))username=username.slice(0,16)+crypto.randomBytes(2).toString('hex');let uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,google_sub,created_at) VALUES(?,?,?,?,?,?,?,?)').run(uid,email,username,clean(info.name,80)||username,'viewer',null,info.sub,now());user=statements.byEmail.get(email);}}createSession(res,user.id);res.writeHead(302,{Location:'/'});res.end();}
@@ -172,12 +228,52 @@ async function handle(req,res){
  }
  if(req.method==='GET'&&pathname==='/api/me'){const u=sessionUser(req);return send(res,200,{user:u,stats:statsFor(u)});}
  if(pathname==='/api/register'&&req.method==='POST'){
-  limit(req,'auth',8,300000);const b=await json(req);const email=clean(b.email,254).toLowerCase(),username=clean(b.username,30).toLowerCase(),display=clean(b.display_name,80),password=String(b.password||''),role=clean(b.role,10);
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail(422,'Enter a valid email address.');if(!/^[a-z0-9_]{3,24}$/.test(username))throw fail(422,'Username must be 3–24 characters (letters, numbers, _).');if(display.length<2)throw fail(422,'Enter your name or artist name.');if(password.length<10||password.length>128)throw fail(422,'Choose a password with at least 10 characters.');if(!['viewer','artist','label'].includes(role))throw fail(422,'Choose a valid account type.');if(statements.byEmail.get(email)||db.prepare('SELECT 1 FROM users WHERE username=?').get(username))throw fail(409,'Email or username is already registered.');const uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)').run(uid,email,username,display,role,hashPassword(password),now());createSession(res,uid);return send(res,201,{user:statements.getUser.get(uid)});
+  limit(req,'registration',50,3600000);const b=await json(req);const email=clean(b.email,254).toLowerCase(),username=clean(b.username,30).toLowerCase(),display=clean(b.display_name,80),password=String(b.password||''),role=clean(b.role,10);
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail(422,'Enter a valid email address.');if(!/^[a-z0-9_]{3,24}$/.test(username))throw fail(422,'Username must be 3–24 characters (letters, numbers, _).');if(display.length<2)throw fail(422,'Enter your name or artist name.');if(password.length<10||password.length>128)throw fail(422,'Choose a password with at least 10 characters.');if(!['viewer','artist','label'].includes(role))throw fail(422,'Choose a valid account type.');if(statements.byEmail.get(email)||db.prepare('SELECT 1 FROM users WHERE username=?').get(username))throw fail(409,'Email or username is already registered.');const uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)').run(uid,email,username,display,role,await hashPassword(password),now());createSession(res,uid);return send(res,201,{user:statements.getUser.get(uid)});
  }
- if(pathname==='/api/login'&&req.method==='POST'){limit(req,'auth',10,300000);const b=await json(req);const u=statements.byEmail.get(clean(b.email,254).toLowerCase());if(!u||!validPassword(String(b.password||''),u.password_hash))throw fail(401,'Incorrect email or password.');createSession(res,u.id);return send(res,200,{user:stripSensitive(u)});}
- if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));return send(res,200,{ok:true});}
- if(pathname==='/api/role'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);if(!['artist','label'].includes(b.role))throw fail(422,'Invalid account role.');if(u.role==='admin')throw fail(403,'Administrator role cannot be modified here.');db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role,u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
+ if(pathname==='/api/login'&&req.method==='POST'){
+   limit(req,'login-global',600,900000);
+   const b=await json(req),email=clean(b.email,254).toLowerCase();
+   limitAccount('login',email,8);
+   const u=statements.byEmail.get(email);
+   if(!await validPassword(String(b.password||''),u?.password_hash))throw fail(401,'Incorrect email or password.');
+   if(!u.password_hash.startsWith('s2$'))db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword(String(b.password)),u.id);
+   const previous=cookieValue(req,'viewly_session');
+   if(previous)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(previous));
+   db.prepare('DELETE FROM auth_throttle WHERE key=?').run(sha('login:'+email));
+   createSession(res,u.id);
+   return send(res,200,{user:stripSensitive(u)});
+  }
+ if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));res.setHeader('Clear-Site-Data','"cache", "storage"');return send(res,200,{ok:true});}
+ if(pathname==='/api/security/sessions'&&req.method==='GET'){
+   const u=requireUser(req),token=cookieValue(req,'viewly_session');
+   const rows=db.prepare('SELECT token_hash,created_at,expires_at FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC LIMIT 100').all(u.id,Date.now());
+   return send(res,200,{sessions:rows.map(s=>({created_at:new Date(s.created_at).toISOString(),expires_at:new Date(s.expires_at).toISOString(),current:!!token&&s.token_hash===sha(token)}))});
+  }
+  if(pathname==='/api/security/logout-others'&&req.method==='POST'){
+   const u=requireUser(req),token=cookieValue(req,'viewly_session');
+   db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(token||''));
+   return send(res,200,{ok:true});
+  }
+  if(pathname==='/api/security/change-password'&&req.method==='POST'){
+   const u=requireUser(req);limit(req,'change-password',10,15*60*1000);
+   const b=await json(req),current=String(b.current_password||''),next=String(b.new_password||'');
+   if(next.length<12||next.length>128)throw fail(422,'Use a new password of 12–128 characters.');
+   const owner=statements.byEmail.get(u.email);
+   if(!owner.password_hash)throw fail(409,'This account uses Google sign-in. Password changes are not available for it.');
+   if(!await validPassword(current,owner.password_hash))throw fail(401,'Current password is incorrect.');
+   if(current===next)throw fail(422,'Choose a different password.');
+   const newHash=await hashPassword(next);
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(newHash,u.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
+    db.exec('COMMIT');
+   }catch(e){db.exec('ROLLBACK');throw e;}
+   createSession(res,u.id);
+   return send(res,200,{ok:true,other_sessions_revoked:true});
+  }
+  if(pathname==='/api/role'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);if(!['artist','label'].includes(b.role))throw fail(422,'Invalid account role.');if(u.role==='admin')throw fail(403,'Administrator role cannot be modified here.');db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role,u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
  if(pathname==='/api/profile'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);db.prepare('UPDATE users SET display_name=?,bio=? WHERE id=?').run(clean(b.display_name,80)||u.display_name,clean(b.bio,500),u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
  if(pathname==='/api/releases'&&req.method==='GET'){const q=clean(url.searchParams.get('q')||'',120);const genre=clean(url.searchParams.get('genre')||'',40);const rows=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE (?='' OR r.title LIKE '%'||?||'%' OR u.display_name LIKE '%'||?||'%') AND (?='' OR r.genre=?) ORDER BY r.created_at DESC LIMIT 80`).all(q,q,q,genre,genre);const u=sessionUser(req);return send(res,200,{releases:rows.map(r=>publicRelease(r,u))});}
  if(pathname==='/api/releases'&&req.method==='POST'){
