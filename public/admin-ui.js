@@ -5,7 +5,7 @@ const A={tab:'overview',query:'',data:null,loading:false,seq:0};
 const defs=[
  ['overview','Overview','discover'],['users','Accounts','user'],['releases','Music','releases'],
  ['campaigns','Campaigns','campaigns'],['submissions','Submissions','scissors'],
- ['reports','Reports','shield'],['comments','Comments','campaigns'],['payments','Payments','wallet'],
+ ['reports','Reports','shield'],['comments','Comments','campaigns'],['payments','Payments','wallet'],['subscriptions','Subscriptions','bolt'],
  ['settings','Site control','studio'],['audit','Audit trail','shield']
 ];
 const icon=(k,n=17)=>ico(k,n);
@@ -191,6 +191,18 @@ function payments(data){
     cell(p.campaign_title),tag(p.provider),'<b class="adm-money">'+fmtEur(p.amount_cents)+'</b>',tag(p.status)
    )), 'No real payment orders have been recorded');
 }
+function subscriptions(data){
+ return '<div class="adm-warning">'+icon('shield',16)+' Test entitlements only. All charges are €0 and this section cannot invent payments, credits or payouts.</div>'+
+  table(['Account','Plan','Interval','Status','Expires','History'],(data.rows||[]).map(s=>
+   row('<b>@'+esc(s.username)+'</b><small>'+esc(s.email)+'</small>',
+    '<b>'+esc(s.plan_id)+'</b>',tag(s.period),tag(s.status),fmtDate(s.period_end_at),
+    '<span class="adm-money">'+Number(s.events_count||0)+' sandbox events</span>'
+   )),'No test subscriptions have been activated')+
+  '<section class="adm-panel" style="margin-top:17px"><div class="adm-panel-head"><h3>Recent sandbox subscription events</h3><small>€0 actually charged</small></div>'+
+  table(['Date','Account','Event','Quoted price','Charged'],(data.recent||[]).map(e=>
+   row(fmtDate(e.created_at),'<b>@'+esc(e.username)+'</b>',tag(e.action),fmtEur(e.quoted_price_cents),
+    '<b class="adm-money">'+fmtEur(e.charged_cents)+'</b>')),'No sandbox events yet')+'</section>';
+}
 function auditTable(items){
  return table(['Time','Administrator','Action','Target'],items.map(a=>
   row(fmtDate(a.created_at),'<b>@'+esc(a.actor||'system')+'</b>',
@@ -227,6 +239,7 @@ function view(response){
   case 'reports':return reports(response);
   case 'comments':return comments(response);
   case 'payments':return payments(response);
+  case 'subscriptions':return subscriptions(response);
   case 'settings':return settings(response);
   case 'audit':return auditTable(response.rows||[]);
   default:return '<div class="adm-empty">Section unavailable</div>';
