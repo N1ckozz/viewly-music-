@@ -1,3 +1,4 @@
+import {feeBenefit,consumeBenefit} from './growth-core.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -44,8 +45,10 @@ export function buildQuote(db,c,b,fail,at=new Date().toISOString()){
   lines.push({id:p.id,label:p.label,hours:p.hours,price_cents:p.price_cents});
  }
  const media=db.prepare('SELECT id,sha256 FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY id').all(c.id);
- const q={campaign_id:c.id,media,budget_cents:c.budget_cents,fee_cents:c.fee_cents,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
- q.total_cents=q.budget_cents+q.fee_cents+q.promo_cents;
+ const benefit=feeBenefit(db,c.owner_id,c.fee_cents,at);
+ const q={campaign_id:c.id,media,budget_cents:c.budget_cents,base_fee_cents:c.fee_cents,fee_cents:c.fee_cents-benefit.discount_cents,...benefit,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
+ q.platform_revenue_cents=q.fee_cents+q.promo_cents;
+ q.total_cents=q.budget_cents+q.platform_revenue_cents;
  return {...q,quote_hash:digest(q)};
 }
 export function campaignBrand(db,cid){
@@ -143,6 +146,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
     const q=ready(current,brand);
     if(data.confirm!==true||data.quote_hash!==q.quote_hash)throw fail(409,'Quote changed or was not confirmed. Review final checkout again.');
     const at=now();
+    consumeBenefit(db,q,actor.id,at);
     db.prepare('INSERT INTO promo_orders VALUES(?,?,?,?,0)').run(c.id,actor.id,JSON.stringify(q),at);
     db.prepare('INSERT INTO sandbox_campaign_orders(id,campaign_id,user_id,quoted_amount_cents,charged_cents,created_at) VALUES(?,?,?,?,0,?)').run(id(),c.id,actor.id,q.total_cents,at);
     for(const x of q.placements)db.prepare('INSERT INTO promo_placements VALUES(?,?,?,?)').run(c.id,x.placement,at,new Date(Date.parse(at)+x.hours*3600000).toISOString());
