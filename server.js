@@ -9,6 +9,7 @@ import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.
 import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
 import {startCpmWatchdog} from './cpm-watchdog.js';
 import {createAnalyticsHandler} from './analytics-core.js';
+import {workspaceSummary} from './workspace-core.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -268,7 +269,7 @@ async function generateClip(videoName,start,end,format='vertical'){
   cmd.on('close',code=>{if(done)return;done=true;clearTimeout(timeout);if(code===0)resolve(output);else reject(fail(422,'Clip generation failed. Check that the range is inside the video.'));});
  });
 }
-function serveFile(req,res,filepath){const ext=path.extname(filepath).toLowerCase();const mime=mimeTypes[ext]||'application/octet-stream';fs.stat(filepath,(err,stat)=>{if(err||!stat.isFile()){res.writeHead(404);return res.end('Not found');}const extra={'Content-Type':mime,'Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Cache-Control':filepath.startsWith(UPLOADS)?'public, max-age=3600':'no-cache'};const range=req.headers.range;if(range){const match=/bytes=(\d*)-(\d*)/.exec(range);if(!match){res.writeHead(416);return res.end();}const start=match[1]?Number(match[1]):0;const end=match[2]?Math.min(Number(match[2]),stat.size-1):stat.size-1;if(start> end||start>=stat.size){res.writeHead(416,{'Content-Range':`bytes */${stat.size}`});return res.end();}res.writeHead(206,{...extra,'Content-Length':end-start+1,'Content-Range':`bytes ${start}-${end}/${stat.size}`});fs.createReadStream(filepath,{start,end}).pipe(res);}else{res.writeHead(200,{...extra,'Content-Length':stat.size});fs.createReadStream(filepath).pipe(res);}});}
+function serveFile(req,res,filepath){const ext=path.extname(filepath).toLowerCase();const mime=mimeTypes[ext]||'application/octet-stream';fs.stat(filepath,(err,stat)=>{if(err||!stat.isFile()){res.writeHead(404);return res.end('Not found');}const extra={'Content-Type':mime,'Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Cache-Control':filepath.startsWith(UPLOADS)?'private, no-store':'no-cache'};const range=req.headers.range;if(range){const match=/bytes=(\d*)-(\d*)/.exec(range);if(!match){res.writeHead(416);return res.end();}const start=match[1]?Number(match[1]):0;const end=match[2]?Math.min(Number(match[2]),stat.size-1):stat.size-1;if(start> end||start>=stat.size){res.writeHead(416,{'Content-Range':`bytes */${stat.size}`});return res.end();}res.writeHead(206,{...extra,'Content-Length':end-start+1,'Content-Range':`bytes ${start}-${end}/${stat.size}`});fs.createReadStream(filepath,{start,end}).pipe(res);}else{res.writeHead(200,{...extra,'Content-Length':stat.size});fs.createReadStream(filepath).pipe(res);}});}
 function statsFor(u){if(!u)return {};const rel=db.prepare('SELECT count(*) AS n FROM releases WHERE owner_id=?').get(u.id).n;const views=db.prepare('SELECT count(*) AS n FROM release_views v JOIN releases r ON r.id=v.release_id WHERE r.owner_id=?').get(u.id).n;const clips=db.prepare('SELECT count(*) AS n FROM clips WHERE user_id=?').get(u.id).n;const camp=db.prepare('SELECT count(*) AS n FROM campaigns WHERE owner_id=?').get(u.id).n;const wallet=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS cents FROM wallet_ledger WHERE user_id=?').get(u.id).cents;return {releases:rel,plays:views,clips,campaigns:camp,earned_cents:wallet};}
 const adminHandler=createAdminHandler({db,requireUser,fail,json,send,now,id,broadcast,cookieValue,sha});
 const mailHandler=createMailHandler({db,requireUser,fail,send,json,limit,limitAccount,hashPassword,now,sha});
@@ -303,6 +304,11 @@ async function handle(req,res){
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
  if(pathname.startsWith('/api/social/'))return socialHandler(req,res,url);
+ if(pathname==='/api/workspace'&&req.method==='GET'){
+  const days=Number(url.searchParams.get('days')||7);
+  if(![7,30].includes(days))throw fail(422,'Choose a 7 or 30 day period.');
+  return send(res,200,workspaceSummary(db,sessionUser(req),days,sandboxCampaignAllowed({status:'sandbox_active'})));
+ }
  if(pathname.startsWith('/api/analytics/'))return analyticsHandler(req,res,url);
  if(pathname==='/api/cpm-submissions/me'||pathname==='/api/campaigns/v10'||/^\/api\/campaigns\/[a-f0-9-]{36}\/(?:v10|assets(?:\/[a-f0-9-]{36})?|pause|resume|cpm-submissions)$/.test(pathname)||/^\/api\/cpm-submissions\/[a-f0-9-]{36}(?:\/(?:review|refresh|settle|appeal))?$/.test(pathname))return creatorCampaignHandler(req,res,url);
  if(pathname.startsWith('/api/auth/'))return mailHandler(req,res,pathname);
