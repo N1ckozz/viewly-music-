@@ -491,12 +491,46 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  if(pathname==='/api/payments/stripe/checkout'&&req.method==='POST')return createStripeCheckout(req,res,requireCreator(req));
  const campMatch=pathname.match(/^\/api\/campaigns\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(campMatch){const cid=campMatch[1],action=campMatch[2],camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(cid);if(!camp)throw fail(404,'Campaign not found.');const u=sessionUser(req);if(!action&&req.method==='GET'){const ownerOrAdmin=u?.id===camp.owner_id||u?.role==='admin';const publicEntry=((camp.status==='active'&&camp.paid_cents>camp.spent_cents)||(sandboxCampaignAllowed(camp)&&camp.sandbox_funded_cents>camp.sandbox_spent_cents))&&camp.moderation_status==='visible'&&db.prepare("SELECT 1 FROM users u JOIN releases r ON r.owner_id=u.id WHERE u.id=? AND u.status='active' AND r.id=? AND r.visibility='public'").get(camp.owner_id,camp.release_id);if(!ownerOrAdmin&&!publicEntry)throw fail(404,'Campaign not found.');return send(res,200,{campaign:campaignRows('WHERE c.id=?',[cid])[0]});}
- if(action==='submit'&&req.method==='POST'){if(!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign submissions are disabled until payouts are operational.');const actor=requireUser(req);if(camp.owner_id===actor.id)throw fail(403,'You cannot claim your own campaign.');if(camp.status!=='active'||camp.spent_cents+camp.reward_cents>camp.paid_cents)throw fail(409,'Campaign is not accepting submissions.');const b=await json(req),link=clean(b.post_url,800);let linkUrl;try{linkUrl=new URL(link)}catch{throw fail(422,'Paste a valid public clip link.')}if(linkUrl.protocol!=='https:'||!/(^|\.)(tiktok\.com|instagram\.com|youtube\.com|youtu\.be)$/.test(linkUrl.hostname))throw fail(422,'Submit a public TikTok, Instagram or YouTube link.');let clipId=null;if(b.clip_id){const clip=db.prepare('SELECT * FROM clips WHERE id=? AND user_id=? AND release_id=?').get(b.clip_id,actor.id,camp.release_id);if(!clip)throw fail(403,'Select one of your own clips for this release.');clipId=clip.id;}const sid=id();try{db.prepare('INSERT INTO submissions(id,campaign_id,user_id,clip_id,post_url,created_at) VALUES(?,?,?,?,?,?)').run(sid,cid,actor.id,clipId,link,now());}catch{throw fail(409,'This clip link has already been submitted.');}broadcast('submission');return send(res,201,{submission_id:sid,status:'pending',note:'Submitted for human review. External views are not automatically verified.'});}
+ if(action==='submit'&&req.method==='POST'){
+  const sandbox=sandboxCampaignAllowed(camp);
+  if(!sandbox&&!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign submissions are disabled until verified payouts are operational.');
+  const actor=requireUser(req);
+  if(camp.owner_id===actor.id)throw fail(403,'You cannot submit to your own campaign.');
+  if(sandbox){
+   if(camp.sandbox_spent_cents+camp.reward_cents>camp.sandbox_funded_cents)throw fail(409,'Campaign has no remaining test reward slots.');
+  }else if(camp.status!=='active'||camp.spent_cents+camp.reward_cents>camp.paid_cents)throw fail(409,'Campaign does not have verified funding.');
+  const b=await json(req),link=clean(b.post_url,800);
+  let linkUrl;try{linkUrl=new URL(link)}catch{throw fail(422,'Paste a valid public clip link.')}
+  if(linkUrl.protocol!=='https:'||!/(^|\.)(tiktok\.com|instagram\.com|youtube\.com|youtu\.be)$/.test(linkUrl.hostname))
+   throw fail(422,'Submit a public TikTok, Instagram or YouTube link.');
+  let clipId=null;
+  if(b.clip_id){
+   const clip=db.prepare('SELECT * FROM clips WHERE id=? AND user_id=? AND release_id=?').get(b.clip_id,actor.id,camp.release_id);
+   if(!clip)throw fail(403,'Select one of your own clips for this release.');
+   clipId=clip.id;
+  }
+  const sid=id(),status=sandbox?'sandbox_pending':'pending';
+  try{
+   db.prepare('INSERT INTO submissions(id,campaign_id,user_id,clip_id,post_url,status,created_at) VALUES(?,?,?,?,?,?,?)')
+    .run(sid,cid,actor.id,clipId,link,status,now());
+  }catch{throw fail(409,'This clip link has already been submitted.')}
+  broadcast('submission');
+  return send(res,201,{submission_id:sid,status,mode:sandbox?'sandbox':'real',charged_cents:sandbox?0:null,
+   note:sandbox?'Sandbox submission only. Any review reward is non-withdrawable and not a real financial credit.':'Submitted for human review. External views are not automatically verified.'});
+ }
  if(action==='submissions'&&req.method==='GET'){const actor=requireUser(req);if(camp.owner_id!==actor.id)throw fail(403,'Only campaign owner can review submissions.');return send(res,200,{submissions:db.prepare('SELECT s.*,u.username,u.display_name,c.file_name AS clip_file FROM submissions s JOIN users u ON u.id=s.user_id LEFT JOIN clips c ON c.id=s.clip_id WHERE s.campaign_id=? ORDER BY s.created_at DESC').all(cid).map(s=>({...s,clip_url:s.clip_file?'/media/'+s.clip_file:null}))});}
  }
  const subMatch=pathname.match(/^\/api\/submissions\/([a-f0-9-]{36})\/review$/);
+ if(subMatch&&req.method==='POST'){
+  const preview=db.prepare('SELECT s.status,c.owner_id FROM submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.id=?').get(subMatch[1]);
+  if(preview?.status==='sandbox_pending'){
+   const actor=requireUser(req),body=await json(req);
+   return reviewSandboxSubmission({db,fail,send,now,id,broadcast},req,res,actor,subMatch[1],body.status);
+  }
+ }
+
  if(subMatch&&req.method==='POST'){if(!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign rewards are disabled until payouts are operational.');const actor=requireCreator(req),sid=subMatch[1],b=await json(req);if(!['approved','rejected'].includes(b.status))throw fail(422,'Invalid decision.');db.exec('BEGIN IMMEDIATE');try{const sub=db.prepare('SELECT * FROM submissions WHERE id=?').get(sid);if(!sub||sub.status!=='pending')throw fail(409,'Submission already reviewed or missing.');const camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(sub.campaign_id);if(camp.owner_id!==actor.id)throw fail(403,'Only the campaign owner can review.');if(b.status==='approved'){if(camp.status!=='active'||camp.spent_cents+camp.reward_cents>camp.paid_cents)throw fail(409,'Campaign does not have sufficient verified funds.');db.prepare('UPDATE campaigns SET spent_cents=spent_cents+?,status=CASE WHEN spent_cents+?>=paid_cents THEN \'completed\' ELSE status END WHERE id=?').run(camp.reward_cents,camp.reward_cents,camp.id);db.prepare('INSERT INTO wallet_ledger VALUES (?,?,?,?,?,?,?)').run(id(),sub.user_id,camp.id,sub.id,'earned_pending_payout',camp.reward_cents,now());}db.prepare('UPDATE submissions SET status=?,reviewed_at=? WHERE id=?').run(b.status,now(),sid);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}broadcast('submission-reviewed');return send(res,200,{ok:true,status:b.status});}
- if(pathname==='/api/wallet'&&req.method==='GET'){const actor=requireUser(req);const entries=db.prepare('SELECT l.*,c.title AS campaign_title FROM wallet_ledger l LEFT JOIN campaigns c ON c.id=l.campaign_id WHERE l.user_id=? ORDER BY l.created_at DESC LIMIT 100').all(actor.id);const totals=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS earned_cents FROM wallet_ledger WHERE user_id=?').get(actor.id);return send(res,200,{earned_cents:totals.earned_cents,payout_enabled:false,available_to_withdraw_cents:0,entries,note:'Rewards earned are recorded against funded campaigns. Cash withdrawals require a separately configured compliant payout provider and verification.'});}
+ if(pathname==='/api/wallet'&&req.method==='GET'){const actor=requireUser(req);const entries=db.prepare('SELECT l.*,c.title AS campaign_title FROM wallet_ledger l LEFT JOIN campaigns c ON c.id=l.campaign_id WHERE l.user_id=? ORDER BY l.created_at DESC LIMIT 100').all(actor.id);const totals=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS earned_cents FROM wallet_ledger WHERE user_id=?').get(actor.id);const testEarnings=db.prepare('SELECT COALESCE(sum(quoted_reward_cents),0) AS n FROM sandbox_creator_rewards WHERE user_id=?').get(actor.id).n;return send(res,200,{earned_cents:totals.earned_cents,sandbox_earned_cents:testEarnings,payout_enabled:false,available_to_withdraw_cents:0,entries,note:'Rewards earned are recorded against funded campaigns. Cash withdrawals require a separately configured compliant payout provider and verification.'});}
  if(pathname==='/api/health'&&req.method==='GET')return send(res,200,{status:'ok',database:'connected',timestamp:now(),payments:'disabled_until_verified_payouts'});
  throw fail(404,'Route not found.');
 }
