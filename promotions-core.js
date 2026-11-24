@@ -73,7 +73,8 @@ export async function normalizeBrand(file,kind,UPLOADS,fail){
   const {stdout}=await exec('ffprobe',['-v','error','-protocol_whitelist','file,pipe','-f',format,'-select_streams','v:0','-show_entries','stream=width,height,codec_name','-of','json',input],{timeout:8000,maxBuffer:65536});
   const s=JSON.parse(stdout).streams?.[0],w=s?.width,h=s?.height;
   const target=kind==='icon'?[1024,1024]:[1600,900];
-  if(!['mjpeg','png','webp'].includes(s?.codec_name)||!w||!h||w>8192||h>8192||w*h>40000000||w<target[0]||h<target[1]||Math.abs(w/h-target[0]/target[1])>.01)throw fail(422,kind==='icon'?'Icon must be square, minimum 1024 × 1024.':'Background must be 16:9, minimum 1600 × 900.');
+  if(!['mjpeg','png','webp'].includes(s?.codec_name)||!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1)throw fail(422,'Image decoding failed. Choose a valid image.');
+  if(w>8192||h>8192||w*h>40000000||w<target[0]||h<target[1]||Math.abs(w/h-target[0]/target[1])>.01)throw fail(422,kind==='icon'?'Icon must be square, minimum 1024 × 1024.':'Background must be 16:9, minimum 1600 × 900.');
   await exec('ffmpeg',['-nostdin','-v','error','-protocol_whitelist','file,pipe','-f',format,'-threads','1','-i',input,'-frames:v','1','-vf','scale='+target[0]+':'+target[1],'-map_metadata','-1','-q:v','3','-threads','1','-y',out],{timeout:15000,maxBuffer:65536});
   const name=crypto.randomBytes(20).toString('hex')+'.jpg';
   output=path.join(UPLOADS,name);
