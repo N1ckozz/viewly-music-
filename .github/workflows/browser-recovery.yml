@@ -29,6 +29,7 @@ jobs:
       - name: Start isolated application and test responsive navigation
         run: |
           export PORT=4179 APP_URL=http://127.0.0.1:4179
+          export VIEWLY_BILLING_MODE=sandbox VIEWLY_BILLING_SANDBOX_ALLOWED=true VIEWLY_V14_REQUIRED=true
           export VIEWLY_DATA_DIR="$RUNNER_TEMP/viewly-browser/data"
           export VIEWLY_UPLOAD_DIR="$RUNNER_TEMP/viewly-browser/uploads"
           node server.js > "$RUNNER_TEMP/viewly-browser.log" 2>&1 &
@@ -40,7 +41,7 @@ jobs:
           done
           curl -fsS "$APP_URL/api/health"
           VIEWLY_BROWSER_URL="$APP_URL" VIEWLY_SCREENSHOT_DIR=browser-results/local python scripts/browser-smoke.py
-      - name: Check public V12 staging in Chromium
+      - name: Check public staging in Chromium
         run: VIEWLY_BROWSER_URL=https://viewly-web-staging.up.railway.app VIEWLY_SCREENSHOT_DIR=browser-results/live python scripts/browser-smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
