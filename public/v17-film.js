@@ -21,7 +21,7 @@ function scenes(f){
   const pages=split(value);pages.forEach((text,i)=>add('brief','04 / THE CREATIVE DIRECTION',title+(pages.length>1?' · '+(i+1)+'/'+pages.length:''),text,[],Math.max(4,Math.min(10,text.length/24+2))));
  }
  const media=f.media||[];
- for(let i=0;i<Math.max(1,media.length);i+=4)add('media','05 / CREATIVE KIT','Ready for creators',media.length+' additional approved asset'+(media.length===1?'':'s')+' · original release included',media.slice(i,i+4).map(x=>[x.label,Math.max(1,Math.round(x.bytes/1024))+' KB']),5);
+ for(let i=0;i<Math.max(1,media.length);i+=4)add('media','05 / CREATIVE KIT','Ready for creators',media.length+' additional approved asset'+(media.length===1?'':'s')+' · original release included'+(d.rights_confirmed?' · rights declared by artist':''),media.slice(i,i+4).map(x=>[x.label,Math.max(1,Math.round(x.bytes/1024))+' KB']),5);
  const p=q.lines||[];
  for(let i=0;i<Math.max(1,p.length);i+=4)add('promotion','06 / PROMOTION PLAN',p.length?'More visibility.':'Organic launch.',p.length?'Selected sponsored products · test placements':'No paid promotion selected',p.slice(i,i+4).map(x=>[x.label+(x.hours?' · '+x.hours+'h':''),money(x.price_cents)]),5);
  add('receipt','07 / CHECKOUT SUMMARY','Thank you for creating with VIEWLY.','Sandbox order confirmation · no actual payment',[],8);
@@ -60,7 +60,9 @@ function progress(a){
  const p=Math.min(100,a.elapsed/a.total*100);a.el.querySelector('.v17f-timeline i').style.width=p+'%';a.el.querySelector('.v17f-timeline').setAttribute('aria-valuenow',String(Math.round(p)));a.el.querySelector('.v17f-time').textContent=Math.floor(a.elapsed)+'s / '+Math.ceil(a.total)+'s';
 }
 function tick(a,t){
- if(active!==a||!a.el.isConnected||S.user?.id!==a.uid){cleanup();return;}
+ if(active!==a)return;
+ if(S.user?.id!==a.uid){cleanup();if(a.el.isConnected)closeOverlay();return;}
+ if(!a.el.isConnected){cleanup();return;}
  a.frame=requestAnimationFrame(n=>tick(a,n));
  if(!a.last)a.last=t;
  const dt=Math.min(.25,(t-a.last)/1000);a.last=t;
