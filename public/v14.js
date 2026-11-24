@@ -21,7 +21,7 @@ function step(n){
  draft.step=n;
  f.querySelectorAll('.v14-step').forEach((x,i)=>{x.hidden=i!==n;});
  f.querySelectorAll('.v14-progress li').forEach((x,i)=>{x.classList.toggle('active',i===n);x.classList.toggle('complete',i<n);});
- f.querySelector('[data-v14-back]').hidden=n===0||n===6;
+ f.querySelector('[data-v14-back]').hidden=n===0||(n===2&&draft.cid&&f.elements.title.disabled);
  f.querySelector('[data-v14-next]').hidden=n===6;
  f.querySelector('[data-v14-next]').textContent=n===5?'Save & review final checkout':'Continue';
  if(n===5)preview(f);
@@ -93,7 +93,7 @@ document.addEventListener('click',async ev=>{
  if(t.hasAttribute('data-v14-open')){const cid=t.dataset.v14Open;try{const x=await api('/campaigns/'+cid);if(!S.campaigns.some(c=>c.id===cid))S.campaigns.push(x.campaign);campaignDetail(cid);}catch(err){errorToast(err);}return;}
  if(t.hasAttribute('data-v14-save')){clearUrls();closeOverlay();await refresh(true);return;}
  const f=currentForm();if(!f||!draft||V.saving)return;
- if(t.hasAttribute('data-v14-back')){state('');step(Math.max(0,draft.step-1));return;}
+ if(t.hasAttribute('data-v14-back')){state('');step(Math.max(0,draft.step===6?4:draft.step-1));return;}
  V.saving=true;t.disabled=true;
  try{
  if(t.hasAttribute('data-v14-pay')){
