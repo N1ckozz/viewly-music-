@@ -1,3 +1,4 @@
+import {publicOnly} from './campaign-privacy.js';
 /* VIEWLY V13: exact, scoped dashboard aggregates; no invented views or financial balances. */
 const num=x=>Number(x)||0;
 const count=(db,sql,...args)=>num(db.prepare(sql).get(...args).n);
@@ -10,7 +11,7 @@ export function workspaceSummary(db, actor, days, sandboxEnabled, at=new Date())
  const published=count(db,"SELECT count(*) AS n FROM releases r JOIN users u ON u.id=r.owner_id WHERE "+visible);
  const artists=count(db,"SELECT count(DISTINCT r.owner_id) AS n FROM releases r JOIN users u ON u.id=r.owner_id WHERE "+visible);
  const campaignVisibility="c.moderation_status='visible' AND r.visibility='public' AND u.status='active'";
- const campaignFrom=" FROM campaigns c JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.owner_id WHERE "+campaignVisibility;
+ const campaignFrom=" FROM campaigns c JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.owner_id WHERE "+campaignVisibility+publicOnly(db);
  const funded=count(db,"SELECT count(*) AS n"+campaignFrom+" AND c.status='active' AND c.paid_cents>c.spent_cents");
  const sandbox=sandboxEnabled?count(db,"SELECT count(*) AS n"+campaignFrom+" AND c.status='sandbox_active' AND c.sandbox_funded_cents>c.sandbox_spent_cents"):0;
  const events=db.prepare("SELECT substr(v.created_at,1,10) AS day,count(*) AS views FROM release_views v JOIN releases r ON r.id=v.release_id JOIN users u ON u.id=r.owner_id WHERE "+visible+" AND v.created_at>=? AND v.created_at<? GROUP BY day ORDER BY day").all(start,end);
