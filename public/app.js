@@ -80,7 +80,7 @@ document.addEventListener('submit',async e=>{const form=e.target;const fid=form.
 (async()=>{try{S.config=await api('/config');await refresh();const status=new URLSearchParams(location.search).get('payment');if(status==='return')toast('Returned from checkout. Funding activates only after the verified provider webhook.');if(status==='cancel')toast('Payment cancelled. No campaign funding was recorded.');if(status)history.replaceState(null,'','/');
  const shared=new URLSearchParams(location.search).get('campaign');
  if(shared&&/^[a-f0-9-]{36}$/.test(shared)){
-  try{await api('/campaigns/'+shared);campaignDetail(shared);}catch(e){toast('This campaign is no longer available.',true);}
+  try{const {campaign}=await api('/campaigns/'+shared);if(!campaign)throw Error('Campaign unavailable');if(!(S.campaigns||[]).some(c=>c.id===shared))S.campaigns=[...(S.campaigns||[]),campaign];campaignDetail(shared);}catch(e){toast('This campaign is no longer available.',true);}
  }}catch(e){errorToast(e);$('#app').innerHTML='<div style="padding:60px;color:#fff">Unable to connect to Viewly. Please retry.</div>'}finally{if(window.ViewlyIntro?.finish)window.ViewlyIntro.finish();else{const loader=$('#app-loader');if(loader){loader.style.opacity=0;setTimeout(()=>loader.remove(),400)}}}setInterval(()=>{if(!document.hidden&&!$('#overlay'))refresh(true)},18000);
 try{const events=new EventSource('/api/events');events.onmessage=()=>{if(!document.hidden&&!$('#overlay'))refresh(true);};}catch{} 
 })();
