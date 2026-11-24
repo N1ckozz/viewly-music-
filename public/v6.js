@@ -26,7 +26,7 @@ function card(c,mine=false){
     '<div><small>'+(mine?'PLANNED BUDGET':cpm?'TEST BUDGET REMAINING':'AVAILABLE SPOTS')+'</small><strong>'+(mine?fmt(budget):cpm?fmt(remaining):String(spots))+'</strong></div></div>'+
     '<div class="v6-budget-title"><span>'+(c.is_sandbox?'SANDBOX CREDIT / €0 CHARGED':funded?'Funded campaign':'Awaiting verified funding')+'</span><b>'+(funded?fmt(spent)+' / '+fmt(funded):fmt(0)+' funded')+'</b></div>'+
     '<div class="v6-budget-track" role="progressbar" aria-label="Funded budget allocated" aria-valuenow="'+pct+'" aria-valuemin="0" aria-valuemax="100"><i style="width:'+pct+'%"></i></div>'+
-    '<div class="v6-card-footer"><button type="button" class="v6-btn v6-btn-primary v6-btn-full" data-action="'+action+'" data-id="'+id+'">'+cta+' '+icon('arrow',15)+'</button></div>'+
+    '<div class="v6-card-footer"><button type="button" class="v6-btn v6-btn-primary v6-btn-full" data-action="'+action+'" data-id="'+id+'">'+cta+' '+icon('arrow',15)+'</button>'+ (mine?'<button type="button" class="v6-btn v6-btn-quiet v6-btn-full" data-v11-open="'+id+'">'+icon('campaigns',15)+' Analytics & budget</button>':'')+'</div>'+
    '</div></article>';
 }
 function sorted(){
