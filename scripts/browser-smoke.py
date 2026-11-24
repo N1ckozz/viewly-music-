@@ -71,4 +71,63 @@ with sync_playwright() as p:
             page.screenshot(path=str(out/f'{name}-failure.png'),full_page=True)
             raise
         finally: context.close()
+    if '127.0.0.1' in base:
+        # All fixture accounts and artwork stay in the isolated CI application, never in live staging.
+        import subprocess, tempfile, uuid
+        for width,height,name in [(1440,900,'desktop'),(390,844,'mobile')]:
+            ctx=browser.new_context(viewport={'width':width,'height':height},reduced_motion='reduce',is_mobile=name=='mobile',has_touch=name=='mobile')
+            page=ctx.new_page()
+            errors=[]
+            page.on('pageerror',lambda err: errors.append(str(err)))
+            try:
+                key='v14_'+uuid.uuid4().hex[:12]
+                headers={'X-Viewly-Request':'1'}
+                reg=page.request.post(base+'/api/register',headers=headers,data={'email':key+'@example.test','username':key,'display_name':'CI Artist','role':'artist','password':'Temporary fixture password 01234'})
+                assert reg.ok,reg.text()
+                with tempfile.TemporaryDirectory() as d:
+                    root=pathlib.Path(d)
+                    video=root/'video.mp4'
+                    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=320x240:d=6','-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-y',str(video)],check=True,timeout=25)
+                    rel=page.request.post(base+'/api/releases',headers=headers,multipart={'title':'CI original','genre':'Rap','rights':'on','video':{'name':'video.mp4','mimeType':'video/mp4','buffer':video.read_bytes()}})
+                    assert rel.ok,rel.text()
+                    for kind,size in [('icon','1024x1024'),('background','1600x900')]:
+                        subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s='+size,'-frames:v','1','-threads','1','-y',str(root/(kind+'.png'))],check=True,timeout=25)
+                    page.goto(base,wait_until='domcontentloaded')
+                    expect(page.locator('.v13-status')).to_contain_text('Live database',timeout=20000)
+                    page.locator('[data-action="create-campaign"]:visible').first.click()
+                    expect(page.locator('#v14-form')).to_be_visible()
+                    form=page.locator('#v14-form')
+                    form.locator('[name="title"]').fill('CI campaign '+name)
+                    form.locator('[name="brief"]').fill('A complete original creative brief with detailed approved instructions for eligible short clips.')
+                    nxt=form.locator('[data-v14-next]')
+                    nxt.click()
+                    expect(form.locator('[name="budget_eur"]')).to_be_visible()
+                    nxt.click()
+                    expect(form.locator('[name="icon"]')).to_be_visible()
+                    form.locator('[name="icon"]').set_input_files(str(root/'icon.png'))
+                    form.locator('[name="background"]').set_input_files(str(root/'background.png'))
+                    form.locator('[name="headline"]').fill('CI promo preview')
+                    nxt.click()
+                    form.locator('[name="rights_confirmed"]').check()
+                    nxt.click()
+                    form.locator('[value="home24"][name="promo"]').check()
+                    nxt.click()
+                    expect(form.locator('#v14-preview .v14-background')).to_be_visible()
+                    page.screenshot(path=str(out/f'v14-{name}-preview.png'),animations='disabled')
+                    nxt.click()
+                    expect(form.locator('#v14-final .v14-total')).to_contain_text('119.99',timeout=60000)
+                    assert page.request.get(base+'/api/promotions/featured').json()['items']==[] or name=='mobile'
+                    form.locator('#v14-confirm').check()
+                    form.locator('[data-v14-pay]').click()
+                    expect(page.locator('.v10-detail h2')).to_contain_text('CI campaign '+name,timeout=20000)
+                    page.reload(wait_until='domcontentloaded')
+                    expect(page.locator('.v14-sponsored [data-v14-open]').first).to_be_visible(timeout=15000)
+                    assert any(x['title']=='CI campaign '+name and x['sandbox'] for x in page.request.get(base+'/api/promotions/featured').json()['items'])
+                    page.screenshot(path=str(out/f'v14-{name}-featured.png'),animations='disabled')
+                    assert not errors,errors
+                    print('V14 '+name+' actual wizard, assets, final checkout and sponsored placement passed',flush=True)
+            except Exception:
+                page.screenshot(path=str(out/f'v14-{name}-failure.png'),full_page=True)
+                raise
+            finally: ctx.close()
     browser.close()

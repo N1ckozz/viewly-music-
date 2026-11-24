@@ -33,6 +33,7 @@ export function createCampaignSandboxHandler({db,requireUser,fail,json,send,limi
   const actor=requireUser(req),camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(m[1]);
   if(!camp)throw fail(404,'Campaign not found.');
   if(camp.owner_id!==actor.id)throw fail(403,'Only the campaign owner may test the funding process.');
+  if(db.prepare('SELECT 1 FROM campaign_branding WHERE campaign_id=?').get(camp.id))throw fail(409,'Complete the V14 final checkout instead.');
   if(camp.status==='sandbox_active'){
    const saved=db.prepare('SELECT * FROM sandbox_campaign_orders WHERE campaign_id=?').get(camp.id);
    return send(res,200,{ok:true,already_active:true,order:saved,charged_cents:0,mode:'sandbox'});

@@ -6,7 +6,7 @@ const defs=[
  ['overview','Overview','discover'],['users','Accounts','user'],['releases','Music','releases'],
  ['campaigns','Campaigns','campaigns'],['submissions','Submissions','scissors'],
  ['reports','Reports','shield'],['comments','Comments','campaigns'],['payments','Payments','wallet'],['subscriptions','Subscriptions','bolt'],['cpm','CPM verification','shield'],
- ['settings','Site control','studio'],['audit','Audit trail','shield']
+ ['promotions','Promotions','bolt'],['settings','Site control','studio'],['audit','Audit trail','shield']
 ];
 const icon=(k,n=17)=>ico(k,n);
 const fmtDate=s=>s?String(s).slice(0,16).replace('T',' '):'—';
@@ -25,7 +25,7 @@ function panel(){
     '<button type="button" class="adm-tab '+(A.tab===key?'current':'')+'" data-adm-tab="'+key+'" aria-current="'+(A.tab===key?'page':'false')+'">'+
     icon(glyph,15)+' '+label+'</button>').join('')+'</nav>'+
   '<div class="adm-toolbar"><div><span class="adm-hint">DATABASE CONTROL / '+A.tab.toUpperCase()+'</span><h2>'+defs.find(x=>x[0]===A.tab)[1]+'</h2></div>'+
-   (['overview','audit','settings','payments','reports'].includes(A.tab)?'':'<label class="adm-search">'+icon('search',16)+
+   (['overview','audit','settings','payments','reports','promotions'].includes(A.tab)?'':'<label class="adm-search">'+icon('search',16)+
     '<input id="adm-query" type="search" placeholder="Search '+A.tab+'..." value="'+esc(A.query)+'" autocomplete="off"></label>')+'</div>'+
   '<div id="adm-body" aria-live="polite"><div class="adm-skeleton">Loading verified records…</div></div>'+
   '<footer class="adm-footer">'+icon('shield',14)+' Protected by admin role, MFA session, same-origin API and immutable application-side audit actions.'+
@@ -257,6 +257,7 @@ function view(response){
   case 'payments':return payments(response);
   case 'subscriptions':return subscriptions(response);
   case 'cpm':return cpmReview(response);
+  case 'promotions':return '<div class="v14-admin-grid">'+(response.products||[]).map(p=>'<form class="v14-admin-form adm-panel" data-promo-admin="'+esc(p.id)+'"><h3>'+esc(p.label)+'</h3><p>'+esc(p.id)+' · '+esc(p.placement)+'</p><label>Price (€)<input name="price" type="number" min="0" max="10000" step=".01" value="'+(p.price_cents/100).toFixed(2)+'" required></label><label>Duration (hours)<input name="hours" type="number" min="'+(p.placement==='package'?0:1)+'" max="720" value="'+p.hours+'" '+(p.placement==='package'?'readonly':'')+' required></label><label>Inventory capacity<input name="capacity" type="number" min="'+(p.placement==='package'?0:1)+'" max="10000" value="'+p.capacity+'" '+(p.placement==='package'?'readonly':'')+' required></label><label><input type="checkbox" name="enabled" '+(p.enabled?'checked':'')+'> Enabled</label><button class="adm-btn primary" type="submit">Save promotion</button><p role="status"></p></form>').join('')+'</div>';
   case 'settings':return settings(response);
   case 'audit':return auditTable(response.rows||[]);
   default:return '<div class="adm-empty">Section unavailable</div>';
@@ -300,6 +301,12 @@ async function mutate(type,id,payload,method='PATCH'){
   return result;
  }catch(e){toast(e.message||'Admin operation failed.',true);return null}
 }
+document.addEventListener('submit',async e=>{
+ const f=e.target.closest('[data-promo-admin]');if(!f)return;
+ e.preventDefault();e.stopImmediatePropagation();const b=f.querySelector('button'),out=f.querySelector('[role="status"]');b.disabled=true;
+ try{await api('/admin/promotions','PATCH',{id:f.dataset.promoAdmin,price_cents:Math.round(Number(f.elements.price.value)*100),hours:Number(f.elements.hours.value),capacity:Number(f.elements.capacity.value),enabled:f.elements.enabled.checked});out.textContent='Saved and audited.';}
+ catch(err){out.textContent=err.message;}finally{b.disabled=false;}
+},true);
 let debounced;
 document.addEventListener('click',async e=>{
  const section=e.target.closest('[data-adm-tab]');

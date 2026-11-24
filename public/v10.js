@@ -152,12 +152,12 @@ function viewCampaign(campaign,assets,submissions,social){
  const budget=Number(campaign.is_sandbox?campaign.sandbox_funded_cents:campaign.paid_cents)||0;
  const spent=Number(campaign.is_sandbox?campaign.sandbox_spent_cents:campaign.spent_cents)||0;
  return '<div class="v10-detail"><header class="v10-detail-head"><span class="v10-kicker">CREATOR REWARDS / '+(campaign.is_sandbox?'SANDBOX':'DRAFT')+'</span>'+
-  '<h2>'+value(campaign.title)+'</h2><p>'+value(campaign.artist_name)+' · '+value(campaign.release_title)+'</p>'+
+  (campaign.branding?.background_url?'<div class="v14-detail-brand"><img src="'+value(campaign.branding.background_url)+'" alt="">'+(campaign.branding.icon_url?'<img class="v14-detail-icon" src="'+value(campaign.branding.icon_url)+'" alt="">':'')+'</div>':'')+'<h2>'+value(campaign.title)+'</h2><p>'+value(campaign.artist_name)+' · '+value(campaign.release_title)+'</p>'+
   '<div class="v10-tags"><span> TikTok</span><span>'+euro(campaign.cpm_rate_cents)+' / 1K reported views</span>'+
   '<span>Max '+euro(campaign.max_clip_cents)+' / clip</span>'+status(campaign.status)+'</div></header>'+
   '<div class="v10-statcards"><div><small>CAMPAIGN BUDGET</small><b>'+euro(campaign.budget_cents)+'</b></div>'+
   '<div><small>PLATFORM FEE · 5%</small><b>'+euro(campaign.fee_cents)+'</b></div>'+
-  '<div><small>QUOTED TOTAL</small><b>'+euro(campaign.budget_cents+campaign.fee_cents)+'</b></div>'+
+  '<div><small>QUOTED TOTAL</small><b>'+euro(campaign.promo_total_cents??(campaign.budget_cents+campaign.fee_cents))+'</b></div>'+
   '<div><small>ACTUAL FUNDS RECEIVED</small><b>€0.00</b></div></div>'+
   '<div class="v10-amount-foot">TEST CREDIT: '+euro(Math.max(0,budget-spent))+' of '+euro(budget)+' · not backed by real money or eligible for withdrawal.</div>'+
   '<div class="v10-detail-grid"><section><div class="v10-section-head"><h3>Full mission brief</h3><span>Read before publishing</span></div>'+
@@ -193,7 +193,7 @@ function ownerControls(c){
  const pause=c.status==='sandbox_active';
  return '<button type="button" class="v10-button v10-primary" data-v11-open="'+value(c.id)+'">'+symbol('campaigns',16)+' Analytics & budget</button>'+ 
   '<h3>Campaign control</h3><p>Your terms remain locked after funding so clippers are not surprised by a retroactive rate change.</p>'+
-  (draft&&S.config?.billing_sandbox_enabled?'<button class="v10-button v10-primary" data-v10-fund="'+value(c.id)+'">'+symbol('bolt',18)+
+  (draft&&c.branding?'<button class="v10-button v10-primary" data-v14-resume="'+value(c.id)+'">Continue final checkout</button>':draft&&S.config?.billing_sandbox_enabled?'<button class="v10-button v10-primary" data-v10-fund="'+value(c.id)+'">'+symbol('bolt',18)+
    ' Test fund · €0 charged</button>':'')+
   (pause?'<button class="v10-button v10-outlined" data-v10-state="'+value(c.id)+'" data-v10-command="pause">Pause new submissions</button>':'')+
   (c.status==='sandbox_paused'?'<button class="v10-button v10-primary" data-v10-state="'+value(c.id)+'" data-v10-command="resume">Resume campaign</button>':'')+
