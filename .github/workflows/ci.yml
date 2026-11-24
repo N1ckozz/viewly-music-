@@ -31,5 +31,6 @@ jobs:
           node --check public/security.js
           node --check mfa.js
           node --check public/mfa-ui.js
+          node --check public/v7.js
       - name: Real backend integration tests
         run: npm test
