@@ -74,8 +74,8 @@ profilePage=function(){
  const original=originalProfile();
  const form=original.match(/<form class="form-panel" id="profile-form">[\s\S]*?<\/form>/)?.[0]||'';
  const account='<div class="v-settings-panel"><h2>Profile details</h2><p>Edit the identity shown to other Viewly members.</p>'+form+'</div>';
- const security='<div class="v-settings-panel"><h2>Sign-in & security</h2>'+row('Session','Active','This browser is signed in')+row('Password recovery','Not available','Account recovery is not yet launched')+'<button class="v-button is-subtle" data-action="logout">Sign out of this device '+ico('arrow',13)+'</button></div>';
- const privacy='<div class="v-settings-panel"><h2>Privacy & data</h2><p>Your profile and media are processed by the Viewly staging server. Production persistence and account recovery still require implementation.</p><div class="v-integrity">'+ico('shield',17)+'<div><b>Staging account</b><p>A production-grade data storage and backup system is not configured yet. Do not store irreplaceable uploads.</p></div></div></div>';
+ const security='<div class="v-settings-panel"><h2>Sign-in & security</h2>'+row('Session','Active','This browser is signed in')+row('Password recovery','Not available','Account recovery is not yet launched')+'<div class="v-settings-actions"><button class="v-button is-subtle" data-v-security="sessions">View active sessions</button><button class="v-button is-subtle" data-v-security="revoke">Sign out of other devices</button><button class="v-button is-subtle" data-action="logout">Sign out here</button></div></div>';
+ const privacy='<div class="v-settings-panel"><h2>Privacy & data</h2><p>Download a portable JSON copy of your account details, published metadata, clips, campaign drafts, activity and ledger. Original media files are downloaded separately.</p><button class="v-button is-primary" data-v-security="export">'+ico('arrow',15)+' Download my data</button><div class="v-integrity">'+ico('shield',17)+'<div><b>Staging account</b><p>A production-grade storage and backup system is not configured yet. Do not store irreplaceable uploads.</p></div></div></div>';
  const payments='<div class="v-settings-panel"><h2>Payments</h2><p>Creator funding and payouts are not enabled. No payment details will be requested until a verified provider is configured.</p><button class="v-button is-subtle" disabled>Payment methods unavailable</button></div>';
  return title('MY ACCOUNT','Settings','Manage identity, privacy and account access.')+'<div class="v-settings-wrap"><nav class="v-settings-nav" aria-label="Settings">'+[['account','Account'],['security','Security'],['privacy','Privacy & data'],['payments','Payments']].map(([id,name])=>'<button class="'+(Y.settings===id?'is-current':'')+'" data-v-tab="settings:'+id+'">'+name+'</button>').join('')+'</nav><div class="v-settings-content">'+({account,security,privacy,payments}[Y.settings])+'</div></div>';
 };
@@ -91,6 +91,28 @@ campaignDetail=function(id){
 };
 const originalRender=render;
 render=function(){originalRender();const h=document.querySelector('#main-content');if(h)h.setAttribute('tabindex','-1');document.title='Viewly Music — '+(({discover:'Discover',campaigns:'Campaigns',releases:'Music',studio:'Artist studio',clips:'Clip editor',wallet:'Rewards',profile:'Settings'})[S.page]||'Music');};
+
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('[data-v-security]');if(!button)return;
+ e.preventDefault();e.stopPropagation();
+ if(button.dataset.vSecurity==='export'){window.location.assign('/api/account/export');return}
+ if(button.dataset.vSecurity==='sessions'){
+  try{const r=await api('/account/sessions');showOverlay('<div class="v-overline">ACCOUNT / SESSIONS</div><h2>Active sessions</h2><p class="intro">Your account currently has <b>'+r.active_session_count+'</b> active sessions. You can revoke other sessions using your current password.</p><button class="v-button is-subtle" data-v-security="revoke">Sign out other devices</button>','medium')}
+  catch(err){toast(err.message,true)}return;
+ }
+ if(button.dataset.vSecurity==='revoke'){
+  showOverlay('<div class="v-overline">SECURITY / RE-AUTHENTICATE</div><h2>Sign out other devices</h2><p class="intro">Keep this session active and revoke every other device. This action requires your current password and cannot be undone.</p><form id="v-revoke-form"><div class="field"><label>CURRENT PASSWORD</label><input type="password" required minlength="1" name="password" autocomplete="current-password"></div><button class="v-button is-primary" type="submit">Revoke other sessions</button></form>','medium');
+ }
+},true);
+document.addEventListener('submit',async e=>{
+ if(e.target.id!=='v-revoke-form')return;
+ e.preventDefault();e.stopPropagation();
+ const btn=e.target.querySelector('[type=submit]');if(btn)btn.disabled=true;
+ try{await api('/account/revoke-other-sessions','POST',{password:new FormData(e.target).get('password')});closeOverlay();toast('All other sessions have been signed out.')}
+ catch(err){toast(err.message,true)}
+ finally{if(btn)btn.disabled=false}
+},true);
+
 document.addEventListener('click',e=>{
  const btn=e.target.closest('[data-v-tab]');if(!btn)return;
  const [group,val]=btn.dataset.vTab.split(':');if(!Y.hasOwnProperty(group)||Y[group]===val)return;
