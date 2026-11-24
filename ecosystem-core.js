@@ -21,6 +21,7 @@ export function ranking(db,days=7,cid=null,at=Date.now()){
 export function ecosystemHome(db,actor){
  const latest=all(db,releases+' ORDER BY r.created_at DESC LIMIT 16').map(mapRelease);
  const active=all(db,campaigns+' AND '+funded()+' ORDER BY COALESCE(c.launched_at,c.created_at) DESC LIMIT 16').map(mapCampaign);
+ const trending=all(db,releases+" AND EXISTS(SELECT 1 FROM release_views v WHERE v.release_id=r.id AND v.created_at>=?) ORDER BY (SELECT count(*) FROM release_views v WHERE v.release_id=r.id AND v.created_at>=?) DESC,r.created_at DESC LIMIT 8",new Date(Date.now()-7*86400000).toISOString(),new Date(Date.now()-7*86400000).toISOString()).map(mapRelease);
  const people=all(db,artists+' ORDER BY followers DESC,releases DESC,u.id LIMIT 12');
  const news=[...latest.map(r=>({kind:'release',id:r.id,title:r.title,artist:r.artist_name,at:r.created_at})),...active.map(c=>({kind:'campaign',id:c.id,title:c.title,artist:c.artist_name,at:c.created_at,sandbox:c.sandbox}))].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,12);
  let personal=null;
@@ -31,7 +32,7 @@ export function ecosystemHome(db,actor){
   personal={account_id:actor.id,saved,following,unread,rank_optin:!!one(db,'SELECT enabled FROM ecosystem_rank_optin WHERE user_id=?',actor.id)?.enabled,
     recommended:all(db,releases+" AND EXISTS(SELECT 1 FROM artist_follows f WHERE f.artist_id=r.owner_id AND f.follower_id=?) ORDER BY r.created_at DESC LIMIT 12",actor.id).map(mapRelease)};
  }
- return {latest,active,artists:people,news,leaders:ranking(db),ranking_mode:isSandboxBilling()?'sandbox':'live',personal};
+ return {latest,trending,active,artists:people,news,leaders:ranking(db),ranking_mode:isSandboxBilling()?'sandbox':'live',personal};
 }
 function notices(db,actor){
  const inv=all(db,"SELECT i.id,i.state,i.created_at,c.id AS campaign_id,c.title,u.display_name AS artist_name FROM ecosystem_invites i JOIN campaigns c ON c.id=i.campaign_id JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.owner_id WHERE i.recipient_id=? AND "+C+" AND "+funded()+" ORDER BY i.created_at DESC LIMIT 30",actor.id);
