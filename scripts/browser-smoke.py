@@ -51,7 +51,15 @@ with sync_playwright() as p:
                 toggle=page.locator('[data-v7-sidebar-toggle]')
                 main=page.locator('.v-workspace')
                 expect(rail).to_be_visible()
-                assert rail.bounding_box()['x']>main.bounding_box()['x']
+                left=page.locator('.v16-left-nav').count()>0
+                if '127.0.0.1' in base:
+                    assert left, 'Left navigation release marker missing'
+                rail_box,main_box=rail.bounding_box(),main.bounding_box()
+                if left:
+                    assert rail_box['x']+rail_box['width']<=main_box['x']+2, 'Navigation must be left of workspace'
+                    assert toggle.bounding_box()['x']<page.locator('.v-topbar').bounding_box()['width']/2
+                else:
+                    assert rail_box['x']>main_box['x'] # previous live release before deployment
                 assert page.locator('.v-topbar').bounding_box()['width']>main.bounding_box()['width']
                 assert page.locator('.v-topbar').evaluate("e=>getComputedStyle(e).backdropFilter")!='none'
                 before=main.bounding_box()['width']
@@ -70,6 +78,8 @@ with sync_playwright() as p:
             else:
                 expect(page.locator('.v-bottom-nav')).to_be_visible()
                 expect(page.locator('#viewly-desktop-navigation')).to_be_hidden()
+                if page.locator('.v16-left-nav').count():
+                    assert page.locator('[data-v7-tools]').bounding_box()['x']<width/2
                 page.locator('[data-v7-tools]').click()
                 expect(page.locator('.v7-tools-modal')).to_be_visible()
                 page.screenshot(path=str(out/'mobile-menu.png'),animations='disabled')

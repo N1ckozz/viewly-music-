@@ -1,0 +1,32 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL('../public/'+p,import.meta.url),'utf8');
+test('V16 sidebar and collapse grid are on left, toggle is in left header',()=>{
+ const css=read('v11.css'),js=read('v7.js');
+ assert.match(css,/grid-template-areas:"header header" "sidebar workspace"/);
+ assert.match(css,/grid-template-columns:var\(--v12-current-rail\) minmax\(0,1fr\)/);
+ assert.match(css,/grid-template-columns:0px minmax\(0,1fr\)/);
+ assert.match(js,/html=html\.replace\(topStart,topStart\+desktopToggle\)/);
+ assert.match(js,/html=html\.replace\(topStart,topStart\+mobileMenu\)/);
+});
+test('V16 never renders another account referral info and ignores stale requests',async()=>{
+ const waiting=[], frames=[];
+ const S={user:{id:'a'},page:'profile'};
+ const ctx=vm.createContext({S,URLSearchParams,location:{origin:'https://example.test',search:''},localStorage:{getItem:()=>null,setItem(){}},sessionStorage:{getItem:()=>null},document:{addEventListener(){}},ico:()=>'',esc:String,discover:()=>'',profilePage:()=>'',campaignCard:()=>'',api:()=>new Promise(resolve=>waiting.push(resolve)),render:()=>frames.push(ctx.profilePage())});
+ vm.runInContext(read('v15.js'),ctx);
+ ctx.render();
+ S.user={id:'b'};ctx.render();
+ const data=code=>({code,invited:0,qualified:0,perks:[],onboarding:0,premium_pass_used:false});
+ waiting[1](data('only-b'));await new Promise(r=>setImmediate(r));
+ waiting[0](data('only-a'));await new Promise(r=>setImmediate(r));
+ assert.match(frames.at(-1),/only-b/);
+ assert.ok(frames.every(x=>!x.includes('only-a')));
+ S.user={id:'c'};ctx.render();
+ assert.doesNotMatch(frames.at(-1),/only-b/);
+ S.user=null;ctx.render();
+ assert.doesNotMatch(frames.at(-1),/only-b/);
+ waiting[2](data('only-c'));await new Promise(r=>setImmediate(r));
+ assert.doesNotMatch(frames.at(-1),/only-c/);
+});

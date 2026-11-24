@@ -166,7 +166,7 @@
 @media(prefers-reduced-motion:reduce){.v11-page,.v11-skeleton{animation:none!important}.v11-progress-piece,.v11-button,.v11-kpi,.v11-portfolio-card{transition:none!important;transform:none!important}}
 
 
-/* VIEWLY V12: unified floating glass header and collapsible right-hand navigation.
+/* VIEWLY V12: unified floating glass header and collapsible left-hand navigation.
    All existing navigation, permissions, API data and mobile dock stay intact. */
 :root{
  --v12-gutter:clamp(12px,1.4vw,22px);
@@ -217,21 +217,21 @@
 @media(min-width:701px){
  .v-app-shell{
   --v12-current-rail:var(--v12-rail);
-  grid-template-columns:minmax(0,1fr) var(--v12-current-rail)!important;
+  grid-template-columns:var(--v12-current-rail) minmax(0,1fr)!important;
   grid-template-rows:var(--v12-header) minmax(0,1fr);
-  grid-template-areas:"header header" "workspace sidebar";
+  grid-template-areas:"header header" "sidebar workspace";
   padding:var(--v12-gutter);
   column-gap:0;row-gap:var(--v12-gap);
   align-items:start;
   transition:grid-template-columns .36s cubic-bezier(.22,1,.36,1);
  }
- .v-app-shell.v7-nav-mini{--v12-current-rail:0px;grid-template-columns:minmax(0,1fr) 0px!important}
+ .v-app-shell.v7-nav-mini{--v12-current-rail:0px;grid-template-columns:0px minmax(0,1fr)!important}
  .v-app-shell>.v-topbar{grid-area:header;width:100%;align-self:start}
  .v-app-shell>.v-workspace{grid-area:workspace;min-width:0;align-self:start}
  .v-app-shell>.v-sidebar{
   grid-area:sidebar;top:calc(var(--v12-gutter) + var(--v12-header) + var(--v12-gap));
   width:calc(100% - var(--v12-gap));min-width:0;
-  margin-left:var(--v12-gap);
+  margin-right:var(--v12-gap);
   height:calc(100dvh - var(--v12-header) - var(--v12-gap) - 2 * var(--v12-gutter));
   align-self:start;align-items:stretch;
   padding:0 12px 12px!important;
@@ -301,3 +301,11 @@
 @media(max-width:700px){
  .v-app-shell .v-topbar .v-logo-word{display:none!important}
 }
+
+/* V16: navigation controls stay beside the left-hand rail, even when collapsed. */
+.v-app-shell .v-topbar .v-top-left{overflow:visible;gap:10px;min-width:0}
+.v-app-shell .v-topbar .v-top-location{min-width:0}
+.v-app-shell .v7-sidebar-toggle:focus-visible,.v-app-shell .v7-tools-trigger:focus-visible{outline:2px solid #d3e1ff;outline-offset:3px}
+.v-app-shell>.v-sidebar .v7-side-link.is-active{border-color:#c1d2ff65;background:linear-gradient(90deg,#a5baff29,#849cdb12);box-shadow:inset 3px 0 #b4cbff,inset 0 1px #e3edff12}
+@media(min-width:701px){.v-app-shell>.v-sidebar{justify-self:start}.v-app-shell .v-topbar .v-top-left{flex:1}.v-app-shell .v-topbar .v-top-right{flex:none}}
+@media(max-width:700px){.v-app-shell .v-topbar .v-top-left{gap:6px}.v-app-shell .v-topbar .v-top-location{display:none}.v-app-shell .v-topbar .v-top-right{gap:5px}}

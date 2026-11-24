@@ -4,7 +4,7 @@
 'use strict';
 const V7={compact:false};
 try{V7.compact=localStorage.getItem('viewly.navigation.hidden')==='1'}catch{}
-const railIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/><path class="v12-toggle-arrow" d="m8 9 3 3-3 3"/></svg>';
+const railIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path class="v12-toggle-arrow" d="m17 9-3 3 3 3"/></svg>';
 function syncRail(){
  if(typeof document.querySelector!=='function')return false;
  const shell=document.querySelector('.v-app-shell');
@@ -85,7 +85,7 @@ function sideGroup(label,entries){
 const baseShell=renderShell;
 renderShell=function(inner){
  let html=baseShell(inner);
- html=html.replace('class="v-app-shell"','class="v-app-shell v7-app'+(V7.compact?' v7-nav-mini':'')+'"');
+ html=html.replace('class="v-app-shell"','class="v-app-shell v7-app v16-left-nav'+(V7.compact?' v7-nav-mini':'')+'"');
  const newRail='<nav class="v-rail" aria-label="Desktop primary navigation">'+
   sideGroup('DISCOVER',[['discover','Home','discover'],['releases','Music library','releases',S.releases.length],['campaigns','Campaigns','campaigns',S.campaigns.length]])+
   sideGroup('YOUR WORKSPACE',[['clips','Clip studio','scissors'],['studio','Artist tools','studio'],['wallet','Rewards','wallet'],['connections','Social accounts','user']])+
@@ -102,15 +102,14 @@ renderShell=function(inner){
   html=html.replace(logo[0],'<div class="v12-rail-heading"><span>WORKSPACE</span><b>Navigation</b></div>');
   html=html.replace(topStart,topStart+logo[0]);
  }
- html=html.replace('</div></header>',desktopToggle+'</div></header>');
+ html=html.replace(topStart,topStart+desktopToggle);
  const mobileMenu='<button type="button" class="v7-tools-trigger" data-v7-tools aria-label="Open creator tools menu" aria-haspopup="dialog">'+
   railIcon+'</button>';
- const topRight='<div class="v-top-right">';
- html=html.replace(topRight,topRight+mobileMenu);
+ html=html.replace(topStart,topStart+mobileMenu);
  const endMarker='<div class="v-sidebar-bottom">';
  const sidebarFooter='<div class="v7-sidebar-footer"><span class="v7-sidebar-marker">V.</span><span><b>MADE FOR SOUND.</b><small>Artists. Clips. Culture.</small></span></div>';
  html=html.replace(endMarker,endMarker+sidebarFooter);
- // The header spans the content and right rail; it is no longer nested in the content column.
+ // The header spans the content and left rail; it is no longer nested in the content column.
  const header=html.match(/<header class="v-topbar">[\s\S]*?<\/header>/);
  if(header){
   html=html.replace(header[0],'');
