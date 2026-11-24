@@ -18,7 +18,7 @@ test('real authentication, public upload, video range, clips, comments, campaign
  for(let i=0;i<70;i++){await new Promise(r=>setTimeout(r,100));try{if((await fetch(base+'/api/health')).ok){ready=true;break;}}catch{}}
  assert.ok(ready,'server should start');
  let cookie='';
- async function request(path,method='GET',obj,auth=true){const headers={};if(auth&&cookie)headers.Cookie=cookie;let body;if(obj instanceof FormData)body=obj;else if(obj!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(obj);}const r=await fetch(base+'/api'+path,{method,headers,body});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return {status:r.status,body:await r.json()};}
+ async function request(path,method='GET',obj,auth=true){const headers={};if(method!=='GET')headers['X-Viewly-Request']='1';if(auth&&cookie)headers.Cookie=cookie;let body;if(obj instanceof FormData)body=obj;else if(obj!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(obj);}const r=await fetch(base+'/api'+path,{method,headers,body});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return {status:r.status,body:await r.json()};}
  let r=await request('/register','POST',{email:'artist@example.test',username:'artist_sample',display_name:'Test Artist',password:'1234567890Test!',role:'artist'},false);assert.equal(r.status,201);
  assert.equal((await request('/me')).body.user.role,'artist');
  const activity=await request('/my-submissions');assert.equal(activity.status,200);assert.deepEqual(activity.body.submissions,[],'a fresh account has no invented submissions');
