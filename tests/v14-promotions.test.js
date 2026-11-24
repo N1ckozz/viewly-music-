@@ -88,6 +88,7 @@ test('V14 real API: private draft, mandatory images, final quote, atomic sandbox
   const checkout=await request(p+'/checkout','POST',{confirm:true,quote_hash:quote.quote_hash},'artist-test');assert.equal(checkout.status,201,JSON.stringify(checkout.body));assert.equal(checkout.body.charged_cents,0);
   const film=checkout.body.film;assert.equal(film.payment_status,'test_confirmed');assert.equal(film.charged_cents,0);assert.equal(film.quote.total_cents,15499);assert.equal(film.details.title,body.title);assert.equal(film.details.brief,body.brief);assert.equal(film.quote.lines[0].id,'growth');
   assert.deepEqual((await request(p+'/film','GET',undefined,'artist-test')).body.film,film);
+  assert.equal((await request(p+'/social-video','POST',{},'other-test')).status,404);
   assert.equal((await request(p+'/film','GET',undefined,'other-test')).status,404);assert.equal((await request(p+'/film')).status,401);
   const retry=await request(p+'/checkout','POST',{confirm:true,quote_hash:quote.quote_hash},'artist-test');assert.equal(retry.status,200);assert.deepEqual(retry.body.film,film);
   const visible=(await request('/promotions/featured')).body.items;assert.equal(visible.length,3);assert.ok(visible.every(x=>x.id===cid&&x.sandbox&&x.remaining_cents===10000));

@@ -45,3 +45,5 @@
 @media(prefers-reduced-motion:reduce){.v17f *{animation:none!important;transition:none!important}}
 
 .v17f[data-scene=receipt][data-paused=true] .v17f-scene{animation:none!important;opacity:1;transform:none;filter:none}
+
+.v17f-share{padding:17px;border:1px solid #b2c9ff4d;border-radius:16px;background:linear-gradient(120deg,#273d644d,#131b2c);display:grid;gap:9px}.v17f-share h3{font:760 22px var(--display,system-ui);margin:4px 0 8px;letter-spacing:-.04em}.v17f-share p{font:500 12px/1.55 var(--body,system-ui);color:#b9cdec;margin:0}.v17f-share-actions{display:flex;gap:8px;flex-wrap:wrap}.v17f-share-actions [data-v17f=share]{background:#c1d5ff;color:#132344;border-color:#d1e0ff;font-weight:750}.v17f-share-actions button:disabled{opacity:.4;cursor:wait}.v17f-share-actions button[hidden]{display:none}.v17f-share .v17f-export-state{font-weight:650;color:#d4e5ff}.v17f-share .v17f-kicker{margin-bottom:5px}
