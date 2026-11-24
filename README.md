@@ -57,8 +57,11 @@ Project: viewly-music. Environment: staging. Service: viewly-web.
     VIEWLY_PAID_MARKETPLACE_ENABLED=false
     VIEWLY_PAYOUTS_OPERATIONAL=false
     VIEWLY_LEGAL_REVIEW_COMPLETE=false
+    VIEWLY_DATA_DIR=/persistent/data
+    VIEWLY_UPLOAD_DIR=/persistent/uploads
+    VIEWLY_REQUIRE_PERSISTENT_STORAGE=true
 
-**IMPORTANT PERSISTENCE WARNING:** As currently configured, the Railway service has NO persistent volume. Registrations, SQLite sessions, video uploads and account activity stored in the container can disappear after restart/redeployment. Do not upload irreplaceable files or treat the system as production. Before real users, attach durable storage and backups and test restore. Hosting, volume storage, payouts, provider fees and moderation can all cost money. Zero out-of-pocket infrastructure costs cannot be promised.
+**Persistence:** Staging requires a Railway volume mounted at `/persistent` (initial size 500 MB). When the requirement flag is enabled, the entrypoint refuses to start unless the actual mount is present and both storage paths are inside it. Verify the volume is live before deploying. The initial switch from ephemeral storage does not migrate old data automatically. Keep independent backups of SQLite (using a consistent SQLite backup) and uploaded files; verify restoration and available capacity before accepting real users. Hosting and storage may cost money.
 
 ## Security
 

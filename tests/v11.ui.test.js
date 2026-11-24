@@ -50,7 +50,7 @@ function boot(){
 }
 test('V11 bundles into the existing site, with responsive, reduced-motion styles',()=>{
  assert.match(html,/\/v11\.js\?v=11\.0/);
- assert.match(html,/\/v11\.css\?v=11\.0/);
+ assert.match(html,/\/v11\.css\?v=12\.0/);
  assert.match(css,/\.v11-progress-track/);
  assert.match(css,/\.v11-chart/);
  assert.match(css,/prefers-reduced-motion/);

@@ -6,10 +6,31 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import net from 'node:net';
 import {fileURLToPath} from 'node:url';
 import {PLAN_CATALOG,catalog} from '../billing-core.js';
 
 const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+async function availablePort(){
+ const server=net.createServer();
+ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
+ const port=server.address().port;
+ await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
+ return port;
+}
+async function waitForHealth(child,base){
+ let stderr='';
+ child.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-3000)});
+ let spawnError;
+ child.on('error',err=>{spawnError=err});
+ const deadline=Date.now()+30000;
+ while(Date.now()<deadline){
+  if(spawnError||child.exitCode!==null||child.signalCode!==null)break;
+  try{if((await fetch(base+'/api/health',{signal:AbortSignal.timeout(1000)})).ok)return}catch{}
+  await new Promise(r=>setTimeout(r,100));
+ }
+ assert.fail('Billing test server failed to become healthy: '+(spawnError||stderr||'timeout or exit '+child.exitCode));
+}
 
 test('catalog preserves €5 creator pricing with yearly savings and honest provider availability',()=>{
  assert.equal(PLAN_CATALOG.creator.monthly_cents,500);
@@ -22,16 +43,14 @@ test('catalog preserves €5 creator pricing with yearly savings and honest prov
 
 test('sandbox checkout persists real entitlements, quotas, cancellations and €0 events without touching payments',async t=>{
  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'viewly-billing-'));
- const database=path.join(folder,'data'),port=35000+Math.floor(Math.random()*14000),base='http://127.0.0.1:'+port;
+ const database=path.join(folder,'data'),port=await availablePort(),base='http://127.0.0.1:'+port;
  const child=spawn(process.execPath,['--disable-warning=ExperimentalWarning',path.join(project,'server.js')],{
   cwd:project,stdio:'pipe',
   env:{...process.env,PORT:String(port),APP_URL:base,VIEWLY_DATA_DIR:database,
    VIEWLY_UPLOAD_DIR:path.join(folder,'uploads'),VIEWLY_BILLING_MODE:'sandbox',VIEWLY_BILLING_SANDBOX_ALLOWED:'true'}
  });
  t.after(()=>{child.kill('SIGTERM');fs.rmSync(folder,{force:true,recursive:true})});
- let ready=false;
- for(let i=0;i<150;i++){await new Promise(r=>setTimeout(r,75));try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}}
- assert.ok(ready,'billing test server starts');
+ await waitForHealth(child,base);
  let cookie='';
  async function request(url,method='GET',payload,overrideCookie){
   const headers={};if(cookie||overrideCookie)headers.Cookie=overrideCookie||cookie;
@@ -106,14 +125,13 @@ test('sandbox checkout persists real entitlements, quotas, cancellations and €
 
 test('sandbox activation is fail-closed when flags are missing',async t=>{
  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'viewly-billing-off-'));
- const port=36000+Math.floor(Math.random()*14000),base='http://127.0.0.1:'+port;
+ const port=await availablePort(),base='http://127.0.0.1:'+port;
  const child=spawn(process.execPath,['--disable-warning=ExperimentalWarning',path.join(project,'server.js')],{
   cwd:project,stdio:'pipe',env:{...process.env,PORT:String(port),APP_URL:base,VIEWLY_BILLING_MODE:'disabled',
    VIEWLY_BILLING_SANDBOX_ALLOWED:'false',VIEWLY_DATA_DIR:path.join(folder,'db'),VIEWLY_UPLOAD_DIR:path.join(folder,'uploads')}
  });
  t.after(()=>{child.kill('SIGTERM');fs.rmSync(folder,{recursive:true,force:true})});
- let ready=false;for(let i=0;i<150;i++){await new Promise(r=>setTimeout(r,75));try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}}
- assert.ok(ready);
+ await waitForHealth(child,base);
  const request=async(ep,data)=>{
   const res=await fetch(base+'/api'+ep,{method:'POST',headers:{'X-Viewly-Request':'1','Content-Type':'application/json'},
    body:JSON.stringify(data)});

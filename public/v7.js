@@ -3,6 +3,22 @@
 (()=>{
 'use strict';
 const V7={compact:false};
+try{V7.compact=localStorage.getItem('viewly.navigation.hidden')==='1'}catch{}
+const railIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/><path class="v12-toggle-arrow" d="m8 9 3 3-3 3"/></svg>';
+function syncRail(){
+ if(typeof document.querySelector!=='function')return false;
+ const shell=document.querySelector('.v-app-shell');
+ const toggle=document.querySelector('[data-v7-sidebar-toggle]');
+ const rail=document.querySelector('#viewly-desktop-navigation');
+ if(!shell||!toggle||!rail)return false;
+ shell.classList.toggle('v7-nav-mini',V7.compact);
+ toggle.setAttribute('aria-expanded',String(!V7.compact));
+ toggle.setAttribute('aria-label',V7.compact?'Show navigation':'Hide navigation');
+ toggle.title=V7.compact?'Show navigation':'Hide navigation';
+ rail.inert=V7.compact;
+ rail.setAttribute('aria-hidden',String(V7.compact));
+ return true;
+}
 const GENRES=[
  {key:'All',label:'All sounds',sub:'Entire library',shape:'orbit',tone:'all'},
  {key:'Trap',label:'Trap',sub:'808 movement',shape:'bass',tone:'trap'},
@@ -79,16 +95,27 @@ renderShell=function(inner){
  html=html.replace(navMatch,()=>newRail);
  // Desktop user entry is already in the top bar. Mobile primary tabs remain in the existing five-button dock.
  const topStart='<div class="v-top-left">';
- const desktopToggle='<button type="button" class="v7-sidebar-toggle" data-v7-sidebar-toggle aria-label="'+(V7.compact?'Expand navigation':'Collapse navigation')+'" aria-expanded="'+(!V7.compact)+'">'+
- icon('campaigns',17)+'</button>';
- html=html.replace(topStart,topStart+desktopToggle);
+ const desktopToggle='<button type="button" class="v7-sidebar-toggle" data-v7-sidebar-toggle aria-controls="viewly-desktop-navigation" aria-label="'+(V7.compact?'Show navigation':'Hide navigation')+'" title="'+(V7.compact?'Show navigation':'Hide navigation')+'" aria-expanded="'+(!V7.compact)+'">'+railIcon+'</button>';
+ html=html.replace('<aside class="v-sidebar">','<aside class="v-sidebar" id="viewly-desktop-navigation" aria-hidden="'+V7.compact+'"'+(V7.compact?' inert':'')+'>');
+ const logo=html.match(/<a href="\/" data-page="discover" aria-label="Viewly home" class="v-logo">[\s\S]*?<\/a>/);
+ if(logo){
+  html=html.replace(logo[0],'<div class="v12-rail-heading"><span>WORKSPACE</span><b>Navigation</b></div>');
+  html=html.replace(topStart,topStart+logo[0]);
+ }
+ html=html.replace('</div></header>',desktopToggle+'</div></header>');
  const mobileMenu='<button type="button" class="v7-tools-trigger" data-v7-tools aria-label="Open creator tools menu" aria-haspopup="dialog">'+
-  '<span class="v7-tools-line"></span><span class="v7-tools-line"></span><span class="v7-tools-line"></span></button>';
+  railIcon+'</button>';
  const topRight='<div class="v-top-right">';
  html=html.replace(topRight,topRight+mobileMenu);
  const endMarker='<div class="v-sidebar-bottom">';
  const sidebarFooter='<div class="v7-sidebar-footer"><span class="v7-sidebar-marker">V.</span><span><b>MADE FOR SOUND.</b><small>Artists. Clips. Culture.</small></span></div>';
  html=html.replace(endMarker,endMarker+sidebarFooter);
+ // The header spans the content and right rail; it is no longer nested in the content column.
+ const header=html.match(/<header class="v-topbar">[\s\S]*?<\/header>/);
+ if(header){
+  html=html.replace(header[0],'');
+  html=html.replace(/^(<div class="v-app-shell[^"]*">)/,'$1'+header[0]);
+ }
  return html;
 };
 const tools=[
@@ -121,7 +148,8 @@ document.addEventListener('click',e=>{
  if(e.target.closest('[data-v7-sidebar-toggle]')){
   e.preventDefault();e.stopImmediatePropagation();
   V7.compact=!V7.compact;
-  render();
+  try{localStorage.setItem('viewly.navigation.hidden',V7.compact?'1':'0')}catch{}
+  if(!syncRail())render();
   return;
  }
  if(e.target.closest('[data-v7-tools]')){
