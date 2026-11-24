@@ -158,6 +158,45 @@ function limitAccount(action,email,max=8,windowMs=15*60*1000){
  db.prepare('UPDATE auth_throttle SET count=count+1 WHERE key=?').run(key);
  if(row.count>=max)throw fail(429,'Too many sign-in attempts. Try again later.');
 }
+
+function mfaMethod(userId){return db.prepare('SELECT * FROM mfa_methods WHERE user_id=?').get(userId);}
+function hasMfa(userId){return mfaMethod(userId)?.enabled===1;}
+function issueMfaTicket(req,res,userId){
+ if(!MFA_AVAILABLE)throw fail(503,'Multi-factor login is temporarily unavailable. Access is safely blocked.');
+ const previous=cookieValue(req,'viewly_session');
+ if(previous)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(previous));
+ const token=crypto.randomBytes(32).toString('base64url');
+ db.prepare('DELETE FROM mfa_tickets WHERE user_id=?').run(userId);
+ db.prepare('INSERT INTO mfa_tickets(token_hash,user_id,expires_at) VALUES(?,?,?)').run(sha(token),userId,Date.now()+300000);
+ const old=res.getHeader('Set-Cookie');
+ res.setHeader('Set-Cookie',[...(Array.isArray(old)?old:old?[old]:[]),cookie('viewly_session','',0),cookie('viewly_mfa_ticket',token,300)]);
+}
+function consumeMfaFactor(userId,submitted){
+ if(!MFA_AVAILABLE)return false;
+ const method=mfaMethod(userId);if(!method?.enabled)return false;
+ let step=-1;
+ try{step=verifyTotp(decryptSeed(method.seed_cipher,MFA_MASTER_KEY),submitted,Date.now(),method.last_step)}catch{return false}
+ if(step>=0){
+  const outcome=db.prepare('UPDATE mfa_methods SET last_step=? WHERE user_id=? AND last_step<?').run(step,userId,step);
+  return outcome.changes===1;
+ }
+ const normalized=normalizeRecoveryCode(submitted);
+ if(!/^[A-F0-9]{24}$/.test(normalized))return false;
+ const hash=recoveryHash(userId,normalized,MFA_MASTER_KEY);
+ return db.prepare('DELETE FROM mfa_recovery WHERE user_id=? AND code_hash=?').run(userId,hash).changes===1;
+}
+function generateRecovery(userId){
+ const codes=newRecoveryCodes();
+ db.prepare('DELETE FROM mfa_recovery WHERE user_id=?').run(userId);
+ const insert=db.prepare('INSERT INTO mfa_recovery VALUES (?,?)');
+ for(const code of codes)insert.run(userId,recoveryHash(userId,code,MFA_MASTER_KEY));
+ return codes;
+}
+function isRecentSession(req,minutes=15){
+ const token=cookieValue(req,'viewly_session');if(!token)return false;
+ const row=db.prepare('SELECT created_at FROM sessions WHERE token_hash=?').get(sha(token));
+ return !!row&&row.created_at>=Date.now()-minutes*60000;
+}
 function baseUrl(req){return APP_URL;}
 async function googleStart(req,res){if(!GOOGLE_ID||!GOOGLE_SECRET)throw fail(503,'Google sign-in is not configured.');const state=crypto.randomBytes(32).toString('base64url');db.prepare('INSERT INTO oauth_states VALUES (?,?)').run(sha(state),Date.now()+600000);res.setHeader('Set-Cookie',cookie('viewly_oauth_state',state,600));const q=new URLSearchParams({client_id:GOOGLE_ID,redirect_uri:APP_URL+'/auth/google/callback',response_type:'code',scope:'openid email profile',state,access_type:'online',prompt:'select_account'});res.writeHead(302,{Location:'https://accounts.google.com/o/oauth2/v2/auth?'+q});res.end();}
 async function googleCallback(req,res,url){if(url.searchParams.get('error'))throw fail(400,'Google sign-in was cancelled.');const state=url.searchParams.get('state')||'';if(!state||state!==cookieValue(req,'viewly_oauth_state'))throw fail(403,'Google sign-in session mismatch.');res.setHeader('Set-Cookie',cookie('viewly_oauth_state','',0));const entry=db.prepare('SELECT * FROM oauth_states WHERE state_hash=? AND expires_at>?').get(sha(state),Date.now());if(!entry)throw fail(403,'Invalid Google session state.');db.prepare('DELETE FROM oauth_states WHERE state_hash=?').run(sha(state));const code=url.searchParams.get('code');if(!code)throw fail(400,'Missing authentication code.');const tokenRes=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GOOGLE_ID,client_secret:GOOGLE_SECRET,redirect_uri:APP_URL+'/auth/google/callback',grant_type:'authorization_code'})});if(!tokenRes.ok)throw fail(502,'Google token exchange failed.');const tk=await tokenRes.json();const infoRes=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tk.access_token}});if(!infoRes.ok)throw fail(502,'Google profile verification failed.');const info=await infoRes.json();if(!info.email_verified||!info.sub)throw fail(403,'Google email is not verified.');let user=statements.byGoogle.get(info.sub);if(!user){const email=clean(info.email.toLowerCase(),254);user=statements.byEmail.get(email);if(user){throw fail(409,'This email already has a Viewly account. Sign in with your existing method before linking Google.');}else{let username=clean(info.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(),22)||'artist';while(db.prepare('SELECT 1 FROM users WHERE username=?').get(username))username=username.slice(0,16)+crypto.randomBytes(2).toString('hex');let uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,google_sub,created_at) VALUES(?,?,?,?,?,?,?,?)').run(uid,email,username,clean(info.name,80)||username,'viewer',null,info.sub,now());user=statements.byEmail.get(email);}}createSession(res,user.id);res.writeHead(302,{Location:'/'});res.end();}
