@@ -201,6 +201,7 @@ function ownerControls(c){
 }
 function clipperControls(c,linked,social){
  if(!S.user)return '<h3>Start clipping</h3><p>Sign in to link your TikTok account before posting.</p><button class="v10-button v10-primary" data-action="register">Create an account</button>';
+ if(c.access?.premium&&!c.access.joined){const a=c.access;return '<div class="g15-access"><h3>Premium campaign</h3><p>Funded above €2,000. '+(a.reason==='first_free'?'Your first premium entry is free. Joining uses your one free entry in this payment mode.':a.allowed?'Your active test plan unlocks entry.':'Your first free entry is used. An active paid plan is required (sandbox test plan for now).')+'</p>'+(a.allowed?'<button class="v10-button v10-primary" data-g15-join="'+value(c.id)+'" data-free="'+(a.reason==='first_free')+'">'+(a.reason==='first_free'?'Use free entry & join':'Join premium campaign')+'</button>':'<button class="v10-button v10-primary" data-page="plans">View plans</button>')+'</div>';}
  if(!linked)return '<h3>Step 1 · Connect TikTok</h3><p>You must connect the actual TikTok account you will use to publish your clip. A typed username is not enough.</p>'+
   (social?.ready?.tiktok?'<a class="v10-button v10-primary" href="/connect/tiktok">Connect TikTok securely</a>':
   '<div class="v10-alert">TikTok OAuth approval and credentials are not configured. Submissions cannot earn verified-view credits until the official integration is available.</div>')+
@@ -226,7 +227,7 @@ async function openCampaign(id){
   ]);
   X.detail=data;X.submissions=submissions.submissions||[];
   const element=document.querySelector('#v10-detail');
-  if(element&&X.currentCampaign===id)element.outerHTML=viewCampaign(data.campaign,data.assets||[],X.submissions,social);
+  if(element&&X.currentCampaign===id)element.outerHTML=viewCampaign({...data.campaign,access:data.access},data.assets||[],X.submissions,social);
  }catch(err){
   const element=document.querySelector('#v10-detail');if(element)element.innerHTML='<h2>Campaign unavailable</h2><p>'+value(err.message||'Refresh and try again.')+'</p>';
  }

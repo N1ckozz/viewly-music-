@@ -18,6 +18,18 @@ with sync_playwright() as p:
             expect(page.locator('.v-app-shell > .v-workspace')).to_be_visible()
             page.locator('#app-loader').wait_for(state='hidden',timeout=15000)
             assert page.request.get(base+'/api/health').ok
+            if page.locator('.g15-welcome').count():
+                expect(page.locator('.g15-scene')).to_be_visible()
+                page.locator('[data-g15-next]').click()
+                expect(page.locator('.g15-welcome-copy h2')).to_have_text('Clip. Submit. Verify.')
+                page.locator('[data-g15-step="2"]').click()
+                expect(page.locator('.g15-welcome-copy h2')).to_have_text('Your first big campaign is free.')
+                page.screenshot(path=str(out/f'v15-{name}-welcome.png'),animations='disabled')
+                page.locator('[data-g15-dismiss]').click()
+                expect(page.locator('.g15-welcome')).to_have_count(0)
+                assert page.request.get(base+'/api/growth/policy').json()['premium_threshold_cents']==200000
+            elif '127.0.0.1' in base:
+                raise AssertionError('V15 welcome missing from local build')
             if page.locator('.v13-hub').count():
                 expect(page.locator('.v13-status')).to_contain_text('Live database',timeout=15000)
                 expect(page.locator('.v13-metrics .v13-metric')).to_have_count(4)

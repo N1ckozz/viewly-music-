@@ -1,3 +1,4 @@
+import {accessFor,joinCampaign} from './growth-core.js';
 /* Viewly V10: artist campaign wizard, rights-managed media assets and reviewable CPM submissions.
    No fake TikTok views. No financial payouts. Sandbox money is isolated from real ledgers. */
 import fs from 'node:fs';
@@ -210,7 +211,7 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
    const assets=db.prepare('SELECT * FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY created_at DESC').all(camp.id).map(publicAsset);
    const isOwner=actor?.id===camp.owner_id||actor?.role==='admin';
    return send(res,200,{campaign:data,assets,social_required:camp.pricing_model==='cpm',
-    social_provider:'tiktok',can_submit:isOwner?false:camp.pricing_model==='cpm'&&camp.status==='sandbox_active'&&!!actor&&!!connectedTikTok(db,actor.id),
+    access:accessFor(db,actor,camp),social_provider:'tiktok',can_submit:isOwner?false:camp.pricing_model==='cpm'&&camp.status==='sandbox_active'&&!!actor&&!!connectedTikTok(db,actor.id),
     artist_has_spotify_oauth:!!db.prepare("SELECT 1 FROM social_connections WHERE user_id=? AND provider='spotify' AND status='active'").get(camp.owner_id),
     creator_eligibility:'Official TikTok ownership must be verified before a CPM submission can earn any sandbox credit.',
     policy:'No auto post deletion, no unverified cash payouts, and no retroactive change to reward terms.'});
@@ -240,6 +241,7 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
     if(camp.owner_id===user.id)throw fail(403,'You cannot enter your own campaign.');
     if(!isSandboxBilling()||camp.status!=='sandbox_active'||camp.sandbox_funded_cents<=camp.sandbox_spent_cents)
      throw fail(409,'Campaign has no active sandbox funding. Real payments remain disabled.');
+    if(!accessFor(db,user,camp).allowed)throw fail(403,'Your free premium entry was used. An active plan is required.');
     const data=await json(req),parsed=parseTikTokUrl(data.post_url,fail);
     const official=await verifyTikTokVideo(db,user.id,parsed.videoId,fail);
     if(!official.owned)throw fail(403,'This video was not found among videos owned by your connected TikTok account.');
@@ -251,6 +253,8 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
     if(Date.now()>Date.parse(trackingUntil))throw fail(409,'This video is outside the campaign tracking window.');
     const sid=id();
     tx(db,()=>{
+     const current=lookup(camp.id);if(current.status!=='sandbox_active'||current.sandbox_funded_cents<=current.sandbox_spent_cents)throw fail(409,'Campaign unavailable.');
+     joinCampaign(db,user,current,fail,now);
      db.prepare("INSERT INTO submissions(id,campaign_id,user_id,post_url,status,created_at) VALUES(?,?,?,?,?,?)")
       .run(sid,camp.id,user.id,parsed.canonical,'sandbox_pending',nowAt);
      db.prepare("INSERT INTO cpm_submissions(submission_id,campaign_id,clipper_id,connection_id,tiktok_video_id,post_url,posted_at,submitted_at,reported_views,highest_views,last_checked_at,monitoring_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
