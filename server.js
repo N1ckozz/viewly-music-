@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
+import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -8,11 +9,13 @@ import { fileURLToPath } from 'node:url';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+process.umask(0o077); // New database and upload files are private to the application user.
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC=path.join(ROOT,'public');
 const UPLOADS=path.resolve(process.env.VIEWLY_UPLOAD_DIR||path.join(ROOT,'uploads'));
 const DATA=path.resolve(process.env.VIEWLY_DATA_DIR||path.join(ROOT,'data'));
 fs.mkdirSync(DATA,{recursive:true});fs.mkdirSync(UPLOADS,{recursive:true});
+for(const folder of [DATA,UPLOADS]){try{fs.chmodSync(folder,0o700)}catch{ /* Some managed volumes restrict chmod. */ }}
 const db=new DatabaseSync(path.join(DATA,'viewly.sqlite'));
 db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;');
 db.exec(`
@@ -38,23 +41,32 @@ CREATE INDEX IF NOT EXISTS idx_submissions_campaign ON submissions(campaign_id,c
 db.exec(`CREATE TABLE IF NOT EXISTS artist_follows(follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,artist_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,PRIMARY KEY(follower_id,artist_id));
 CREATE INDEX IF NOT EXISTS idx_artist_follows_artist ON artist_follows(artist_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS content_reports(id TEXT PRIMARY KEY,release_id TEXT NOT NULL REFERENCES releases(id),reporter_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(release_id,reporter_id));`);
+db.exec("CREATE TABLE IF NOT EXISTS mfa_methods(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,seed_cipher TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,last_step INTEGER NOT NULL DEFAULT -1,created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS mfa_recovery(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,code_hash TEXT NOT NULL,PRIMARY KEY(user_id,code_hash)); CREATE TABLE IF NOT EXISTS mfa_tickets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0);");
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
 const GOOGLE_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
 const STRIPE_KEY=process.env.STRIPE_SECRET_KEY||'';
 const STRIPE_WEBHOOK_SECRET=process.env.STRIPE_WEBHOOK_SECRET||'';
+const MFA_MASTER_KEY=process.env.VIEWLY_MFA_MASTER_KEY||'';
+const MFA_AVAILABLE=validMfaKey(MFA_MASTER_KEY);
 // Default-deny real-money features until all launch prerequisites are approved.
 const PAYOUT_PROVIDER_IMPLEMENTED=false; // Must be changed by an audited, genuine provider integration, NEVER by environment toggles alone.
 const PAYMENT_LAUNCH_ENABLED=PAYOUT_PROVIDER_IMPLEMENTED && process.env.VIEWLY_PAID_MARKETPLACE_ENABLED==='true' && process.env.VIEWLY_PAYOUTS_OPERATIONAL==='true' && process.env.VIEWLY_LEGAL_REVIEW_COMPLETE==='true' && APP_URL.startsWith('https://');
 const STRIPE_READY=PAYMENT_LAUNCH_ENABLED&&!!STRIPE_KEY&&!!STRIPE_WEBHOOK_SECRET;
 const execFileAsync=promisify(execFile);
+const scryptAsync=promisify(crypto.scrypt);
+const HASH_SETTINGS={N:131072,r:8,p:1,maxmem:256*1024*1024};
+const SESSION_DAYS=7;
+const DUMMY_SALT='12763eccb1a924df7ba553146edf6ccd';
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 const id=()=>crypto.randomUUID();
 const now=()=>new Date().toISOString();
 const clean=(s,max=400)=>String(s??'').trim().slice(0,max);
 const money=n=>Math.round(Number(n)*100);
-const MAX_JSON=64*1024,MAX_UPLOAD=120*1024*1024;
+const MAX_JSON=64*1024,MAX_UPLOAD=80*1024*1024;
+let uploadsInProgress=0,clipJobsInProgress=0;
+const MAX_CONCURRENT_UPLOADS=1,MAX_CONCURRENT_CLIPS=2;
 const mimeExt={'video/mp4':'.mp4','video/webm':'.webm','video/quicktime':'.mov','image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'};
 const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.ico':'image/x-icon','.woff2':'font/woff2'};
 const statements={
@@ -63,12 +75,32 @@ const statements={
   byGoogle:db.prepare('SELECT * FROM users WHERE google_sub=?'),
   ownerOfRelease:db.prepare('SELECT owner_id FROM releases WHERE id=?'),
 };
-function hashPassword(password){const salt=crypto.randomBytes(16).toString('hex');return `${salt}:${crypto.scryptSync(password,salt,64).toString('hex')}`;}
-function validPassword(password,stored){if(!stored) return false;const [salt,h]=stored.split(':');if(!salt||!h)return false;const a=crypto.scryptSync(password,salt,64);const b=Buffer.from(h,'hex');return a.length===b.length&&crypto.timingSafeEqual(a,b);}
-function cookieValue(req,name){const cookie=req.headers.cookie||'';const m=cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]+)'));return m?decodeURIComponent(m[1]):null;}
+async function hashPassword(password){
+ const salt=crypto.randomBytes(16).toString('hex');
+ const key=await scryptAsync(password,salt,64,HASH_SETTINGS);
+ return 's2$'+salt+'$'+key.toString('hex');
+}
+async function validPassword(password,stored){
+ let salt=DUMMY_SALT,hash='',legacy=false;
+ if(typeof stored==='string'&&stored.startsWith('s2$')){
+  const parts=stored.split('$');
+  if(parts.length===3&&/^[a-f0-9]{32}$/.test(parts[1])&&/^[a-f0-9]{128}$/.test(parts[2])){
+   salt=parts[1];hash=parts[2];
+  }
+ }else if(typeof stored==='string'){
+  const parts=stored.split(':');
+  if(parts.length===2&&/^[a-f0-9]{32}$/.test(parts[0])&&/^[a-f0-9]{128}$/.test(parts[1])){
+   salt=parts[0];hash=parts[1];legacy=true;
+  }
+ }
+ const key=await scryptAsync(password,salt,64,legacy?{N:16384,r:8,p:1,maxmem:64*1024*1024}:HASH_SETTINGS);
+ const reference=hash?Buffer.from(hash,'hex'):Buffer.alloc(64);
+ return crypto.timingSafeEqual(key,reference)&&!!hash;
+}
+function cookieValue(req,name){const cookie=req.headers.cookie||'';const m=cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]+)'));if(!m)return null;try{return decodeURIComponent(m[1])}catch{return null}}
 function sessionUser(req){const token=cookieValue(req,'viewly_session');if(!token)return null;const row=db.prepare('SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?').get(sha(token),Date.now());return row?statements.getUser.get(row.user_id):null;}
-function cookie(name,value,maxAge){return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
-function createSession(res,userId){const token=crypto.randomBytes(32).toString('base64url');const expires=Date.now()+30*86400*1000;db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(sha(token),userId,expires,Date.now());const existing=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),cookie('viewly_session',token,30*86400)]);}
+function cookie(name,value,maxAge){const sameSite=name==='viewly_oauth_state'?'Lax':'Strict';return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
+function createSession(res,userId){const token=crypto.randomBytes(32).toString('base64url');const expires=Date.now()+SESSION_DAYS*86400*1000;db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(sha(token),userId,expires,Date.now());const existing=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),cookie('viewly_session',token,SESSION_DAYS*86400)]);}
 function send(res,status,data,extra={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extra});res.end(JSON.stringify(data));}
 function error(res,status,msg){send(res,status,{error:msg});}
 const fail=(status,msg)=>Object.assign(new Error(msg),{status});
@@ -82,23 +114,116 @@ function isRealFile(p,isVideo){if(!p||!p.content?.length)throw fail(400,'Choose 
  if(p.type==='video/webm'&&b.subarray(0,4).toString('hex')!=='1a45dfa3')throw fail(415,'Invalid WebM file.');
  if(p.type==='image/png'&&b.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw fail(415,'Invalid PNG file.');
  if(p.type==='image/jpeg'&&b.subarray(0,2).toString('hex')!=='ffd8')throw fail(415,'Invalid JPEG file.');
+ if(p.type==='image/webp'&&(b.subarray(0,4).toString('latin1')!=='RIFF'||b.subarray(8,12).toString('latin1')!=='WEBP'))throw fail(415,'Invalid WebP file.');
  return p.type;}
 function publicRelease(r,u){return {...r,video_url:`/media/${r.file_name}`,cover_url:r.cover_name?`/media/${r.cover_name}`:null,liked:!!(u&&db.prepare('SELECT 1 FROM release_likes WHERE release_id=? AND user_id=?').get(r.id,u.id))};}
 function getRelease(id,u){const r=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE r.id=?`).get(id);return r?publicRelease(r,u):null;}
 function publicCampaign(r){return {...r,remaining_cents:Math.max(0,r.paid_cents-r.spent_cents),eligible_spots:Math.floor(Math.max(0,r.paid_cents-r.spent_cents)/r.reward_cents)};}
 function campaignRows(where='',args=[]){return db.prepare(`SELECT c.*,u.username,u.display_name AS artist_name,r.title AS release_title,r.cover_name,r.file_name FROM campaigns c JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id ${where} ORDER BY c.created_at DESC LIMIT 100`).all(...args).map(r=>({...publicCampaign(r),cover_url:r.cover_name?`/media/${r.cover_name}`:null,video_url:`/media/${r.file_name}`}));}
 function stripSensitive(user){if(!user)return null;return {id:user.id,email:user.email,username:user.username,display_name:user.display_name,role:user.role,bio:user.bio,created_at:user.created_at};}
-function requireSameOrigin(req){if(['POST','PATCH','DELETE','PUT'].includes(req.method)){const origin=req.headers.origin;const fetchSite=req.headers['sec-fetch-site'];if(origin&&origin!==APP_URL)throw fail(403,'Cross-origin request blocked.');if(fetchSite==='cross-site')throw fail(403,'Cross-site request blocked.');}}
-const liveClients=new Set();
+function requireSameOrigin(req){
+ if(!['POST','PATCH','DELETE','PUT'].includes(req.method))return;
+ if(req.url?.split('?')[0]==='/api/stripe/webhook')return; // Signed Stripe webhook, no browser cookie auth.
+ const origin=req.headers.origin;
+ const site=req.headers['sec-fetch-site'];
+ if(origin&&origin!==APP_URL)throw fail(403,'Cross-origin request blocked.');
+ if(site&&site!=='same-origin'&&site!=='none')throw fail(403,'Cross-site request blocked.');
+ // Require a non-simple request header; CORS is intentionally not enabled.
+ if(req.url?.startsWith('/api/')&&req.headers['x-viewly-request']!=='1')throw fail(403,'Protected request header required.');
+}
+const liveClients=new Set();const MAX_LIVE_CLIENTS=120;
 function broadcast(kind){const msg=`data: ${JSON.stringify({kind,at:now()})}\n\n`;for(const client of liveClients){try{client.write(msg)}catch{liveClients.delete(client)}}}
-const rate=new Map();setInterval(()=>{const t=Date.now();for(const [k,v] of rate)if(v.until<t)rate.delete(k);},60000).unref();function limit(req,key,cap=25,windowMs=60000){let ip=req.socket.remoteAddress||'unknown';let k=ip+':'+key;let v=rate.get(k);if(!v||Date.now()>v.until)v={count:0,until:Date.now()+windowMs};v.count++;rate.set(k,v);if(v.count>cap)throw fail(429,'Too many attempts. Try again shortly.');}
+const rate=new Map();
+db.exec('CREATE TABLE IF NOT EXISTS auth_throttle(key TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL)');
+setInterval(()=>{
+ const t=Date.now();
+ for(const [k,v] of rate)if(v.until<t)rate.delete(k);
+ db.prepare('DELETE FROM auth_throttle WHERE reset_at<?').run(t);
+ db.prepare('DELETE FROM sessions WHERE expires_at<?').run(t);
+ db.prepare('DELETE FROM oauth_states WHERE expires_at<?').run(t);
+ db.prepare('DELETE FROM mfa_tickets WHERE expires_at<?').run(t);
+},60000).unref();
+function limit(req,key,cap=25,windowMs=60000){
+ const ip=req.socket.remoteAddress||'unknown',k=ip+':'+key;
+ let v=rate.get(k);
+ if(!v||Date.now()>v.until)v={count:0,until:Date.now()+windowMs};
+ v.count++;rate.set(k,v);
+ if(rate.size>15000){for(const key of rate.keys()){rate.delete(key);if(rate.size<12000)break;}}
+ if(v.count>cap)throw fail(429,'Too many attempts. Try again shortly.');
+}
+function limitAccount(action,email,max=8,windowMs=15*60*1000){
+ const key=sha(action+':'+email.toLowerCase()),t=Date.now();
+ const row=db.prepare('SELECT count,reset_at FROM auth_throttle WHERE key=?').get(key);
+ if(!row||row.reset_at<=t){db.prepare('INSERT OR REPLACE INTO auth_throttle VALUES (?,?,?)').run(key,1,t+windowMs);return;}
+ db.prepare('UPDATE auth_throttle SET count=count+1 WHERE key=?').run(key);
+ if(row.count>=max)throw fail(429,'Too many sign-in attempts. Try again later.');
+}
+
+function mfaMethod(userId){return db.prepare('SELECT * FROM mfa_methods WHERE user_id=?').get(userId);}
+function hasMfa(userId){return mfaMethod(userId)?.enabled===1;}
+function issueMfaTicket(req,res,userId){
+ if(!MFA_AVAILABLE)throw fail(503,'Multi-factor login is temporarily unavailable. Access is safely blocked.');
+ const previous=cookieValue(req,'viewly_session');
+ if(previous)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(previous));
+ const token=crypto.randomBytes(32).toString('base64url');
+ db.prepare('DELETE FROM mfa_tickets WHERE user_id=?').run(userId);
+ db.prepare('INSERT INTO mfa_tickets(token_hash,user_id,expires_at) VALUES(?,?,?)').run(sha(token),userId,Date.now()+300000);
+ const old=res.getHeader('Set-Cookie');
+ res.setHeader('Set-Cookie',[...(Array.isArray(old)?old:old?[old]:[]),cookie('viewly_session','',0),cookie('viewly_mfa_ticket',token,300)]);
+}
+function consumeMfaFactor(userId,submitted){
+ if(!MFA_AVAILABLE)return false;
+ const method=mfaMethod(userId);if(!method?.enabled)return false;
+ let step=-1;
+ try{step=verifyTotp(decryptSeed(method.seed_cipher,MFA_MASTER_KEY),submitted,Date.now(),method.last_step)}catch{return false}
+ if(step>=0){
+  const outcome=db.prepare('UPDATE mfa_methods SET last_step=? WHERE user_id=? AND last_step<?').run(step,userId,step);
+  return outcome.changes===1;
+ }
+ const normalized=normalizeRecoveryCode(submitted);
+ if(!/^[A-F0-9]{24}$/.test(normalized))return false;
+ const hash=recoveryHash(userId,normalized,MFA_MASTER_KEY);
+ return db.prepare('DELETE FROM mfa_recovery WHERE user_id=? AND code_hash=?').run(userId,hash).changes===1;
+}
+function generateRecovery(userId){
+ const codes=newRecoveryCodes();
+ db.prepare('DELETE FROM mfa_recovery WHERE user_id=?').run(userId);
+ const insert=db.prepare('INSERT INTO mfa_recovery VALUES (?,?)');
+ for(const code of codes)insert.run(userId,recoveryHash(userId,code,MFA_MASTER_KEY));
+ return codes;
+}
+function isRecentSession(req,minutes=15){
+ const token=cookieValue(req,'viewly_session');if(!token)return false;
+ const row=db.prepare('SELECT created_at FROM sessions WHERE token_hash=?').get(sha(token));
+ return !!row&&row.created_at>=Date.now()-minutes*60000;
+}
 function baseUrl(req){return APP_URL;}
 async function googleStart(req,res){if(!GOOGLE_ID||!GOOGLE_SECRET)throw fail(503,'Google sign-in is not configured.');const state=crypto.randomBytes(32).toString('base64url');db.prepare('INSERT INTO oauth_states VALUES (?,?)').run(sha(state),Date.now()+600000);res.setHeader('Set-Cookie',cookie('viewly_oauth_state',state,600));const q=new URLSearchParams({client_id:GOOGLE_ID,redirect_uri:APP_URL+'/auth/google/callback',response_type:'code',scope:'openid email profile',state,access_type:'online',prompt:'select_account'});res.writeHead(302,{Location:'https://accounts.google.com/o/oauth2/v2/auth?'+q});res.end();}
-async function googleCallback(req,res,url){if(url.searchParams.get('error'))throw fail(400,'Google sign-in was cancelled.');const state=url.searchParams.get('state')||'';if(!state||state!==cookieValue(req,'viewly_oauth_state'))throw fail(403,'Google sign-in session mismatch.');res.setHeader('Set-Cookie',cookie('viewly_oauth_state','',0));const entry=db.prepare('SELECT * FROM oauth_states WHERE state_hash=? AND expires_at>?').get(sha(state),Date.now());if(!entry)throw fail(403,'Invalid Google session state.');db.prepare('DELETE FROM oauth_states WHERE state_hash=?').run(sha(state));const code=url.searchParams.get('code');if(!code)throw fail(400,'Missing authentication code.');const tokenRes=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GOOGLE_ID,client_secret:GOOGLE_SECRET,redirect_uri:APP_URL+'/auth/google/callback',grant_type:'authorization_code'})});if(!tokenRes.ok)throw fail(502,'Google token exchange failed.');const tk=await tokenRes.json();const infoRes=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tk.access_token}});if(!infoRes.ok)throw fail(502,'Google profile verification failed.');const info=await infoRes.json();if(!info.email_verified||!info.sub)throw fail(403,'Google email is not verified.');let user=statements.byGoogle.get(info.sub);if(!user){const email=clean(info.email.toLowerCase(),254);user=statements.byEmail.get(email);if(user){throw fail(409,'This email already has a Viewly account. Sign in with your existing method before linking Google.');}else{let username=clean(info.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(),22)||'artist';while(db.prepare('SELECT 1 FROM users WHERE username=?').get(username))username=username.slice(0,16)+crypto.randomBytes(2).toString('hex');let uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,google_sub,created_at) VALUES(?,?,?,?,?,?,?,?)').run(uid,email,username,clean(info.name,80)||username,'viewer',null,info.sub,now());user=statements.byEmail.get(email);}}createSession(res,user.id);res.writeHead(302,{Location:'/'});res.end();}
+async function googleCallback(req,res,url){if(url.searchParams.get('error'))throw fail(400,'Google sign-in was cancelled.');const state=url.searchParams.get('state')||'';if(!state||state!==cookieValue(req,'viewly_oauth_state'))throw fail(403,'Google sign-in session mismatch.');res.setHeader('Set-Cookie',cookie('viewly_oauth_state','',0));const entry=db.prepare('SELECT * FROM oauth_states WHERE state_hash=? AND expires_at>?').get(sha(state),Date.now());if(!entry)throw fail(403,'Invalid Google session state.');db.prepare('DELETE FROM oauth_states WHERE state_hash=?').run(sha(state));const code=url.searchParams.get('code');if(!code)throw fail(400,'Missing authentication code.');const tokenRes=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GOOGLE_ID,client_secret:GOOGLE_SECRET,redirect_uri:APP_URL+'/auth/google/callback',grant_type:'authorization_code'})});if(!tokenRes.ok)throw fail(502,'Google token exchange failed.');const tk=await tokenRes.json();const infoRes=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tk.access_token}});if(!infoRes.ok)throw fail(502,'Google profile verification failed.');const info=await infoRes.json();if(!info.email_verified||!info.sub)throw fail(403,'Google email is not verified.');let user=statements.byGoogle.get(info.sub);if(!user){const email=clean(info.email.toLowerCase(),254);user=statements.byEmail.get(email);if(user){throw fail(409,'This email already has a Viewly account. Sign in with your existing method before linking Google.');}else{let username=clean(info.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g,'').toLowerCase(),22)||'artist';while(db.prepare('SELECT 1 FROM users WHERE username=?').get(username))username=username.slice(0,16)+crypto.randomBytes(2).toString('hex');let uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,google_sub,created_at) VALUES(?,?,?,?,?,?,?,?)').run(uid,email,username,clean(info.name,80)||username,'viewer',null,info.sub,now());user=statements.byEmail.get(email);}}if(hasMfa(user.id)){issueMfaTicket(req,res,user.id);res.writeHead(302,{Location:'/?mfa=1'});res.end();return;}createSession(res,user.id);res.writeHead(302,{Location:'/'});res.end();}
 function stripeSignatureValid(payload,sig){if(!STRIPE_WEBHOOK_SECRET||!sig)return false;let t=sig.match(/(?:^|,)t=(\d+)/)?.[1];let vals=[...sig.matchAll(/(?:^|,)v1=([a-f0-9]+)/g)].map(x=>x[1]);if(!t||Math.abs(Date.now()/1000-Number(t))>300)return false;let actual=crypto.createHmac('sha256',STRIPE_WEBHOOK_SECRET).update(`${t}.${payload.toString('utf8')}`).digest('hex');return vals.some(s=>s.length===actual.length&&crypto.timingSafeEqual(Buffer.from(s),Buffer.from(actual)));}
 async function stripeWebhook(req,res){const payload=await readBody(req,MAX_JSON);if(!stripeSignatureValid(payload,req.headers['stripe-signature']))throw fail(400,'Invalid Stripe signature.');const event=JSON.parse(payload.toString('utf8'));if(db.prepare('SELECT 1 FROM webhook_events WHERE id=?').get(event.id))return send(res,200,{received:true});db.exec('BEGIN IMMEDIATE');try{if(event.type==='checkout.session.completed'&&event.data?.object?.payment_status==='paid'){const sess=event.data.object;const order=db.prepare('SELECT * FROM payment_orders WHERE provider_ref=?').get(sess.id);if(order){const c=db.prepare('SELECT * FROM campaigns WHERE id=?').get(order.campaign_id);if(c&&sess.currency==='eur'&&sess.amount_total===order.amount_cents&&sess.client_reference_id===order.campaign_id&&order.status!=='paid'){db.prepare("UPDATE payment_orders SET status='paid' WHERE id=?").run(order.id);if(PAYMENT_LAUNCH_ENABLED)db.prepare("UPDATE campaigns SET paid_cents=budget_cents,status='active' WHERE id=? AND status='awaiting_payment'").run(c.id);else console.error('Stripe payment received while marketplace is disabled. Campaign remains inactive; reconcile/refund order',order.id);}}}db.prepare('INSERT INTO webhook_events VALUES (?,?)').run(event.id,now());db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}broadcast('payment');send(res,200,{received:true});}
 async function createStripeCheckout(req,res,u){if(!STRIPE_READY)throw fail(503,'Paid campaigns are disabled until verified payouts, compliance and HTTPS are configured. No charge was made.');const {campaign_id}=await json(req);const c=db.prepare('SELECT * FROM campaigns WHERE id=? AND owner_id=?').get(campaign_id,u.id);if(!c)throw fail(404,'Campaign not found.');if(!['draft','awaiting_payment'].includes(c.status))throw fail(409,'Campaign cannot be funded in this state.');const outstanding=db.prepare("SELECT 1 FROM payment_orders WHERE campaign_id=? AND status='pending'").get(c.id);if(outstanding)throw fail(409,'A checkout session already exists for this campaign. Complete or cancel that session first.');const amount=c.budget_cents+c.fee_cents;const orderId=id();const form=new URLSearchParams({'mode':'payment','success_url':APP_URL+'/?payment=return','cancel_url':APP_URL+'/?payment=cancel','client_reference_id':campaign_id,'metadata[campaign_id]':campaign_id,'line_items[0][price_data][currency]':'eur','line_items[0][price_data][unit_amount]':String(amount),'line_items[0][price_data][product_data][name]':'Viewly funded promotion • '+clean(c.title,80),'line_items[0][quantity]':'1'});const resp=await fetch('https://api.stripe.com/v1/checkout/sessions',{method:'POST',headers:{Authorization:'Bearer '+STRIPE_KEY,'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':orderId},body:form});const result=await resp.json();if(!resp.ok||!result.id||!result.url)throw fail(502,'Payment provider did not create a checkout session.');db.exec('BEGIN IMMEDIATE');try{db.prepare('INSERT INTO payment_orders VALUES (?,?,?,?,?,?,?)').run(orderId,campaign_id,'stripe',result.id,'pending',amount,now());db.prepare("UPDATE campaigns SET status='awaiting_payment' WHERE id=? AND status='draft'").run(c.id);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}send(res,200,{checkout_url:result.url,order_id:orderId});}
 async function saveMedia(part,isVideo){const type=isRealFile(part,isVideo);if(!isVideo&&part.content.length>15*1024*1024)throw fail(413,'Cover image must be under 15 MB.');const newName=crypto.randomBytes(20).toString('hex')+mimeExt[type];await fsp.writeFile(path.join(UPLOADS,newName),part.content,{flag:'wx'});return newName;}
+async function sanitizeCover(part){
+ isRealFile(part,false);
+ if(part.content.length>10*1024*1024)throw fail(413,'Cover must be under 10 MB.');
+ const tmp=path.join(DATA,crypto.randomBytes(20).toString('hex')+'.incoming');
+ const name=crypto.randomBytes(20).toString('hex')+'.jpg',destination=path.join(UPLOADS,name);
+ await fsp.writeFile(tmp,part.content,{flag:'wx',mode:0o600});
+ try{
+  const probe=await execFileAsync('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','json',tmp],{timeout:12000,maxBuffer:65536});
+  const dim=JSON.parse(probe.stdout).streams?.[0];
+  if(!dim||!Number.isInteger(dim.width)||!Number.isInteger(dim.height)||dim.width<1||dim.height<1||dim.width>5000||dim.height>5000||dim.width*dim.height>12000000)throw fail(415,'Invalid or oversized cover image.');
+  await execFileAsync('ffmpeg',['-nostdin','-hide_banner','-loglevel','error','-threads','1','-i',tmp,'-frames:v','1','-vf','scale=960:960:force_original_aspect_ratio=decrease','-map_metadata','-1','-q:v','4','-y',destination],{timeout:20000,maxBuffer:65536});
+  const stat=await fsp.stat(destination);
+  if(stat.size<100||stat.size>5*1024*1024)throw fail(415,'Cover image could not be safely processed.');
+  return name;
+ }catch(e){
+  await fsp.unlink(destination).catch(()=>{});
+  if(e.status)throw e;
+  throw fail(415,'Cover image could not be safely processed.');
+ }finally{await fsp.unlink(tmp).catch(()=>{});}
+}
 async function verifyUploadedVideo(name){
  const file=path.join(UPLOADS,name);
  try{
@@ -126,14 +251,14 @@ async function generateClip(videoName,start,end,format='vertical'){
 function serveFile(req,res,filepath){const ext=path.extname(filepath).toLowerCase();const mime=mimeTypes[ext]||'application/octet-stream';fs.stat(filepath,(err,stat)=>{if(err||!stat.isFile()){res.writeHead(404);return res.end('Not found');}const extra={'Content-Type':mime,'Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff','Cache-Control':filepath.startsWith(UPLOADS)?'public, max-age=3600':'no-cache'};const range=req.headers.range;if(range){const match=/bytes=(\d*)-(\d*)/.exec(range);if(!match){res.writeHead(416);return res.end();}const start=match[1]?Number(match[1]):0;const end=match[2]?Math.min(Number(match[2]),stat.size-1):stat.size-1;if(start> end||start>=stat.size){res.writeHead(416,{'Content-Range':`bytes */${stat.size}`});return res.end();}res.writeHead(206,{...extra,'Content-Length':end-start+1,'Content-Range':`bytes ${start}-${end}/${stat.size}`});fs.createReadStream(filepath,{start,end}).pipe(res);}else{res.writeHead(200,{...extra,'Content-Length':stat.size});fs.createReadStream(filepath).pipe(res);}});}
 function statsFor(u){if(!u)return {};const rel=db.prepare('SELECT count(*) AS n FROM releases WHERE owner_id=?').get(u.id).n;const views=db.prepare('SELECT count(*) AS n FROM release_views v JOIN releases r ON r.id=v.release_id WHERE r.owner_id=?').get(u.id).n;const clips=db.prepare('SELECT count(*) AS n FROM clips WHERE user_id=?').get(u.id).n;const camp=db.prepare('SELECT count(*) AS n FROM campaigns WHERE owner_id=?').get(u.id).n;const wallet=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS cents FROM wallet_ledger WHERE user_id=?').get(u.id).cents;return {releases:rel,plays:views,clips,campaigns:camp,earned_cents:wallet};}
 async function handle(req,res){
- const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
+ const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('X-Permitted-Cross-Domain-Policies','none');res.setHeader('Origin-Agent-Cluster','?1');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
  if(pathname==='/auth/google'&&req.method==='GET')return googleStart(req,res);
  if(pathname==='/auth/google/callback'&&req.method==='GET')return googleCallback(req,res,url);
  if(pathname.startsWith('/media/')&&req.method==='GET'){const name=pathname.slice(7);if(!/^[a-f0-9]{40}\.(mp4|webm|mov|jpg|png|webp)$/.test(name))throw fail(404,'File not found.');return serveFile(req,res,path.join(UPLOADS,name));}
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
- if(req.method==='GET'&&pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
- if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',stripe_ready:STRIPE_READY,google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
+ if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
+ if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,stripe_ready:STRIPE_READY,google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
 
  const artistMatch=pathname.match(/^\/api\/artists\/([a-f0-9-]{36})(?:\/(follow))?$/);
  if(artistMatch){
@@ -172,16 +297,126 @@ async function handle(req,res){
  }
  if(req.method==='GET'&&pathname==='/api/me'){const u=sessionUser(req);return send(res,200,{user:u,stats:statsFor(u)});}
  if(pathname==='/api/register'&&req.method==='POST'){
-  limit(req,'auth',8,300000);const b=await json(req);const email=clean(b.email,254).toLowerCase(),username=clean(b.username,30).toLowerCase(),display=clean(b.display_name,80),password=String(b.password||''),role=clean(b.role,10);
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail(422,'Enter a valid email address.');if(!/^[a-z0-9_]{3,24}$/.test(username))throw fail(422,'Username must be 3–24 characters (letters, numbers, _).');if(display.length<2)throw fail(422,'Enter your name or artist name.');if(password.length<10||password.length>128)throw fail(422,'Choose a password with at least 10 characters.');if(!['viewer','artist','label'].includes(role))throw fail(422,'Choose a valid account type.');if(statements.byEmail.get(email)||db.prepare('SELECT 1 FROM users WHERE username=?').get(username))throw fail(409,'Email or username is already registered.');const uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)').run(uid,email,username,display,role,hashPassword(password),now());createSession(res,uid);return send(res,201,{user:statements.getUser.get(uid)});
+  limit(req,'registration',50,3600000);const b=await json(req);const email=clean(b.email,254).toLowerCase(),username=clean(b.username,30).toLowerCase(),display=clean(b.display_name,80),password=String(b.password||''),role=clean(b.role,10);
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail(422,'Enter a valid email address.');if(!/^[a-z0-9_]{3,24}$/.test(username))throw fail(422,'Username must be 3–24 characters (letters, numbers, _).');if(display.length<2)throw fail(422,'Enter your name or artist name.');if(password.length<10||password.length>128)throw fail(422,'Choose a password with at least 10 characters.');if(!['viewer','artist','label'].includes(role))throw fail(422,'Choose a valid account type.');if(statements.byEmail.get(email)||db.prepare('SELECT 1 FROM users WHERE username=?').get(username))throw fail(409,'Email or username is already registered.');const uid=id();db.prepare('INSERT INTO users(id,email,username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)').run(uid,email,username,display,role,await hashPassword(password),now());createSession(res,uid);return send(res,201,{user:statements.getUser.get(uid)});
  }
- if(pathname==='/api/login'&&req.method==='POST'){limit(req,'auth',10,300000);const b=await json(req);const u=statements.byEmail.get(clean(b.email,254).toLowerCase());if(!u||!validPassword(String(b.password||''),u.password_hash))throw fail(401,'Incorrect email or password.');createSession(res,u.id);return send(res,200,{user:stripSensitive(u)});}
- if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));return send(res,200,{ok:true});}
- if(pathname==='/api/role'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);if(!['artist','label'].includes(b.role))throw fail(422,'Invalid account role.');if(u.role==='admin')throw fail(403,'Administrator role cannot be modified here.');db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role,u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
+ if(pathname==='/api/login'&&req.method==='POST'){
+   limit(req,'login-global',600,900000);
+   const b=await json(req),email=clean(b.email,254).toLowerCase();
+   limitAccount('login',email,8);
+   const u=statements.byEmail.get(email);
+   if(!await validPassword(String(b.password||''),u?.password_hash))throw fail(401,'Incorrect email or password.');
+   if(!u.password_hash.startsWith('s2$'))db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword(String(b.password)),u.id);
+   const previous=cookieValue(req,'viewly_session');
+   if(previous)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(previous));
+   db.prepare('DELETE FROM auth_throttle WHERE key=?').run(sha('login:'+email));
+   if(hasMfa(u.id)){issueMfaTicket(req,res,u.id);return send(res,200,{mfa_required:true});}
+   createSession(res,u.id);
+   return send(res,200,{user:stripSensitive(u)});
+  }
+ if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));res.setHeader('Clear-Site-Data','"cache", "storage"');return send(res,200,{ok:true});}
+ 
+if(pathname==='/api/security/mfa/login'&&req.method==='POST'){
+ limit(req,'mfa-login',200,15*60*1000);
+ const ticket=cookieValue(req,'viewly_mfa_ticket');
+ if(!ticket)throw fail(401,'Security challenge expired. Sign in again.');
+ const record=db.prepare('SELECT * FROM mfa_tickets WHERE token_hash=? AND expires_at>?').get(sha(ticket),Date.now());
+ if(!record||record.attempts>=6)throw fail(401,'Security challenge expired. Sign in again.');
+ limitAccount('mfa',record.user_id,10);
+ db.prepare('UPDATE mfa_tickets SET attempts=attempts+1 WHERE token_hash=?').run(sha(ticket));
+ const b=await json(req);
+ if(!consumeMfaFactor(record.user_id,String(b.code||'')))throw fail(401,'Invalid authenticator or recovery code.');
+ db.prepare('DELETE FROM mfa_tickets WHERE user_id=?').run(record.user_id);
+ db.prepare('DELETE FROM auth_throttle WHERE key=?').run(sha('mfa:'+record.user_id));
+ res.setHeader('Set-Cookie',cookie('viewly_mfa_ticket','',0));
+ createSession(res,record.user_id);
+ return send(res,200,{user:statements.getUser.get(record.user_id)});
+}
+if(pathname==='/api/security/mfa'&&req.method==='GET'){
+ const u=requireUser(req),method=mfaMethod(u.id);
+ return send(res,200,{available:MFA_AVAILABLE,enabled:!!method?.enabled,pending:!!method&&!method.enabled});
+}
+if(pathname==='/api/security/mfa/setup'&&req.method==='POST'){
+ const u=requireUser(req);
+ if(!MFA_AVAILABLE)throw fail(503,'MFA encryption is not configured on this server.');
+ if(!isRecentSession(req))throw fail(403,'Sign out and sign in again before enabling MFA.');
+ if(hasMfa(u.id))throw fail(409,'Multi-factor authentication is already enabled.');
+ const b=await json(req),owner=statements.byEmail.get(u.email);
+ if(owner.password_hash&&!await validPassword(String(b.current_password||''),owner.password_hash))throw fail(401,'Current password is incorrect.');
+ const secret=newTotpSecret();
+ db.prepare('INSERT OR REPLACE INTO mfa_methods(user_id,seed_cipher,enabled,last_step,created_at) VALUES(?,?,?,?,?)').run(u.id,encryptSeed(secret,MFA_MASTER_KEY),0,-1,now());
+ const otpauth='otpauth://totp/'+encodeURIComponent('Viewly:'+u.email)+'?'+new URLSearchParams({secret,issuer:'Viewly',algorithm:'SHA1',digits:'6',period:'30'});
+ return send(res,200,{secret,otpauth_url:otpauth,note:'Keep this seed private; verify it with your authenticator app before activation.'});
+}
+if(pathname==='/api/security/mfa/enable'&&req.method==='POST'){
+ const u=requireUser(req),method=mfaMethod(u.id),b=await json(req);
+ if(!MFA_AVAILABLE)throw fail(503,'MFA is not configured.');
+ if(!method||method.enabled)throw fail(409,'Begin a new MFA setup.');
+ if(Date.now()-Date.parse(method.created_at)>15*60*1000)throw fail(410,'MFA setup expired. Start over.');
+ const step=verifyTotp(decryptSeed(method.seed_cipher,MFA_MASTER_KEY),String(b.code||''),Date.now(),-1);
+ if(step<0)throw fail(401,'Invalid authenticator code.');
+ db.exec('BEGIN IMMEDIATE');let codes;
+ try{
+  db.prepare('UPDATE mfa_methods SET enabled=1,last_step=? WHERE user_id=? AND enabled=0').run(step,u.id);
+  codes=generateRecovery(u.id);
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(cookieValue(req,'viewly_session')||''));
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e}
+ return send(res,200,{enabled:true,recovery_codes:codes,note:'Save recovery codes now. Each works only once and will not be shown again.'});
+}
+if(pathname==='/api/security/mfa/disable'&&req.method==='POST'){
+ const u=requireUser(req),b=await json(req),owner=statements.byEmail.get(u.email);
+ if(!hasMfa(u.id))throw fail(409,'MFA is not enabled.');
+ if(owner.password_hash&&!await validPassword(String(b.current_password||''),owner.password_hash))throw fail(401,'Current password is incorrect.');
+ limitAccount('mfa-change',u.id,8);
+ if(!consumeMfaFactor(u.id,String(b.code||'')))throw fail(401,'Authenticator or recovery code required.');
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  db.prepare('DELETE FROM mfa_recovery WHERE user_id=?').run(u.id);
+  db.prepare('DELETE FROM mfa_methods WHERE user_id=?').run(u.id);
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(cookieValue(req,'viewly_session')||''));
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e}
+ return send(res,200,{enabled:false});
+}
+if(pathname==='/api/security/sessions'&&req.method==='GET'){
+   const u=requireUser(req),token=cookieValue(req,'viewly_session');
+   const rows=db.prepare('SELECT token_hash,created_at,expires_at FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC LIMIT 100').all(u.id,Date.now());
+   return send(res,200,{sessions:rows.map(s=>({created_at:new Date(s.created_at).toISOString(),expires_at:new Date(s.expires_at).toISOString(),current:!!token&&s.token_hash===sha(token)}))});
+  }
+  if(pathname==='/api/security/logout-others'&&req.method==='POST'){
+   const u=requireUser(req),token=cookieValue(req,'viewly_session');
+   db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(token||''));
+   return send(res,200,{ok:true});
+  }
+  if(pathname==='/api/security/change-password'&&req.method==='POST'){
+   const u=requireUser(req);limit(req,'change-password',10,15*60*1000);
+   const b=await json(req),current=String(b.current_password||''),next=String(b.new_password||'');
+   if(next.length<12||next.length>128)throw fail(422,'Use a new password of 12–128 characters.');
+   const owner=statements.byEmail.get(u.email);
+   if(!owner.password_hash)throw fail(409,'This account uses Google sign-in. Password changes are not available for it.');
+   if(!await validPassword(current,owner.password_hash))throw fail(401,'Current password is incorrect.');
+   if(hasMfa(u.id)&&!consumeMfaFactor(u.id,String(b.mfa_code||'')))throw fail(401,'Current authenticator or recovery code required.');
+   if(current===next)throw fail(422,'Choose a different password.');
+   const newHash=await hashPassword(next);
+   db.exec('BEGIN IMMEDIATE');
+   try{
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(newHash,u.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
+    db.exec('COMMIT');
+   }catch(e){db.exec('ROLLBACK');throw e;}
+   createSession(res,u.id);
+   return send(res,200,{ok:true,other_sessions_revoked:true});
+  }
+  if(pathname==='/api/role'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);if(!['artist','label'].includes(b.role))throw fail(422,'Invalid account role.');if(u.role==='admin')throw fail(403,'Administrator role cannot be modified here.');db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role,u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
  if(pathname==='/api/profile'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);db.prepare('UPDATE users SET display_name=?,bio=? WHERE id=?').run(clean(b.display_name,80)||u.display_name,clean(b.bio,500),u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
  if(pathname==='/api/releases'&&req.method==='GET'){const q=clean(url.searchParams.get('q')||'',120);const genre=clean(url.searchParams.get('genre')||'',40);const rows=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE (?='' OR r.title LIKE '%'||?||'%' OR u.display_name LIKE '%'||?||'%') AND (?='' OR r.genre=?) ORDER BY r.created_at DESC LIMIT 80`).all(q,q,q,genre,genre);const u=sessionUser(req);return send(res,200,{releases:rows.map(r=>publicRelease(r,u))});}
  if(pathname==='/api/releases'&&req.method==='POST'){
-  limit(req,'upload',12,3600000);const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await saveMedia(get('cover'),false);else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
+  limit(req,'upload',12,3600000);
+  if(uploadsInProgress>=MAX_CONCURRENT_UPLOADS)throw fail(503,'An upload is already being processed. Retry shortly.');
+  uploadsInProgress++;
+  try{const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await sanitizeCover(get('cover'));else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
+  }finally{uploadsInProgress--;}
  }
  const releaseMatch=pathname.match(/^\/api\/releases\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(releaseMatch){const rid=releaseMatch[1],action=releaseMatch[2],u=sessionUser(req);const r=getRelease(rid,u);if(!r)throw fail(404,'Release not found.');if(!action&&req.method==='GET')return send(res,200,{release:r});
@@ -199,8 +434,19 @@ async function handle(req,res){
   if(action==='comments'&&req.method==='POST'){const actor=requireUser(req);const b=await json(req);const body=clean(b.body,600);if(body.length<2)throw fail(422,'Write a comment.');const cid=id();db.prepare('INSERT INTO release_comments VALUES (?,?,?,?,?)').run(cid,rid,actor.id,body,now());broadcast('comment');return send(res,201,{ok:true,id:cid});}
   if(action==='like'&&req.method==='POST'){const actor=requireUser(req);if(db.prepare('SELECT 1 FROM release_likes WHERE release_id=? AND user_id=?').get(rid,actor.id))db.prepare('DELETE FROM release_likes WHERE release_id=? AND user_id=?').run(rid,actor.id);else db.prepare('INSERT INTO release_likes VALUES (?,?)').run(rid,actor.id);broadcast('release-stats');return send(res,200,{release:getRelease(rid,actor)});}
   if(action==='view'&&req.method==='POST'){const actor=requireUser(req);db.prepare('INSERT OR IGNORE INTO release_views VALUES (?,?,?)').run(rid,actor.id,now());broadcast('release-stats');return send(res,200,{release:getRelease(rid,actor)});}
-  if(action==='clip'&&req.method==='POST'){const actor=requireUser(req);limit(req,'clip',15,3600000);const b=await json(req);const start=Number(b.start),end=Number(b.end);if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start||end-start<5||end-start>90)throw fail(422,'Choose a 5–90 second clip range.');const format=b.format==='original'?'original':'vertical';const duration=await verifyUploadedVideo(r.file_name);if(end>duration+0.05)throw fail(422,'The clip range extends beyond the source video.');const output=await generateClip(r.file_name,start,end,format);const cid=id();db.prepare('INSERT INTO clips VALUES (?,?,?,?,?,?,?)').run(cid,rid,actor.id,output,start,end,now());broadcast('clip');return send(res,201,{clip:{id:cid,video_url:'/media/'+output,start,end}});}
+  if(action==='clip'&&req.method==='POST'){const actor=requireUser(req);limit(req,'clip',15,3600000);if(clipJobsInProgress>=MAX_CONCURRENT_CLIPS)throw fail(503,'Clip processing is busy. Retry shortly.');const b=await json(req);const start=Number(b.start),end=Number(b.end);if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start||end-start<5||end-start>90)throw fail(422,'Choose a 5–90 second clip range.');const format=b.format==='original'?'original':'vertical';const duration=await verifyUploadedVideo(r.file_name);if(end>duration+0.05)throw fail(422,'The clip range extends beyond the source video.');clipJobsInProgress++;let output;try{output=await generateClip(r.file_name,start,end,format);}finally{clipJobsInProgress--;}const cid=id();db.prepare('INSERT INTO clips VALUES (?,?,?,?,?,?,?)').run(cid,rid,actor.id,output,start,end,now());broadcast('clip');return send(res,201,{clip:{id:cid,video_url:'/media/'+output,start,end}});}
   if(!action&&req.method==='DELETE'){const actor=requireUser(req);if(r.owner_id!==actor.id)throw fail(403,'Only the artist can delete a release.');const campaigns=db.prepare('SELECT count(*) AS n FROM campaigns WHERE release_id=?').get(rid).n;if(campaigns)throw fail(409,'Release has linked campaigns. Delete or complete those first.');db.prepare('DELETE FROM release_comments WHERE release_id=?').run(rid);db.prepare('DELETE FROM release_likes WHERE release_id=?').run(rid);db.prepare('DELETE FROM release_views WHERE release_id=?').run(rid);db.prepare('DELETE FROM clips WHERE release_id=?').run(rid);db.prepare('DELETE FROM releases WHERE id=?').run(rid);broadcast('release');return send(res,200,{ok:true});}
+ }
+ // The creator's own real submission history, never unverified view counts or estimated payouts.
+ if(pathname==='/api/my-submissions'&&req.method==='GET'){
+  const actor=requireUser(req);
+  const records=db.prepare(`SELECT s.id,s.campaign_id,s.post_url,s.status,s.created_at,s.reviewed_at,
+    c.title AS campaign_title,c.platform,c.reward_cents,c.status AS campaign_status,
+    r.title AS release_title
+    FROM submissions s JOIN campaigns c ON c.id=s.campaign_id
+    JOIN releases r ON r.id=c.release_id WHERE s.user_id=?
+    ORDER BY s.created_at DESC LIMIT 100`).all(actor.id);
+  return send(res,200,{submissions:records,note:'Approval does not imply verified social reach or a completed cash payout.'});
  }
  if(pathname==='/api/clips'&&req.method==='GET'){const actor=requireUser(req);const clips=db.prepare('SELECT c.*,r.title AS release_title FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 100').all(actor.id);return send(res,200,{clips:clips.map(c=>({...c,video_url:'/media/'+c.file_name}))});}
  if(pathname==='/api/campaigns'&&req.method==='GET'){const mine=url.searchParams.get('mine')==='1';if(mine){const u=requireUser(req);return send(res,200,{campaigns:campaignRows('WHERE c.owner_id=?',[u.id])});}return send(res,200,{campaigns:campaignRows("WHERE c.status='active' AND c.paid_cents>c.spent_cents")});}
@@ -218,4 +464,5 @@ async function handle(req,res){
  throw fail(404,'Route not found.');
 }
 const server=http.createServer(async(req,res)=>{try{await handle(req,res)}catch(err){const status=Number(err.status)||500;if(status>=500)console.error(err);if(!res.headersSent)error(res,status,status===500?'Internal server error.':err.message);else res.end();}});
+server.requestTimeout=120000;server.headersTimeout=15000;server.keepAliveTimeout=5000;server.maxHeadersCount=80;server.maxRequestsPerSocket=500;
 server.listen(PORT,'0.0.0.0',()=>console.log(`VIEWLY running at ${APP_URL} (port ${PORT})`));

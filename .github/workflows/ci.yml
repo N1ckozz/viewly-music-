@@ -1,9 +1,9 @@
 name: Viewly checks
 on:
   push:
-    branches: [main]
+    branches: [main, redesign/viewly-studio-v4, security/hardening-nov2026]
   pull_request:
-    branches: [main]
+    branches: [main, redesign/viewly-studio-v4]
 permissions:
   contents: read
 jobs:
@@ -23,5 +23,13 @@ jobs:
           node --check public/app.js
           node --check public/stage.js
           node --check public/experience.js
+          node --check public/v4.js
+          node --check public/v4.motion.js
+          node --check public/v5.js
+          node --check public/v6.js
+          node --check public/v6.motion.js
+          node --check public/security.js
+          node --check mfa.js
+          node --check public/mfa-ui.js
       - name: Real backend integration tests
         run: npm test

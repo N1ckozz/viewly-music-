@@ -1,0 +1,56 @@
+/* VIEWLY Security Center: designed for accessibility and clear account controls. */
+.sec-center{display:grid;gap:17px;margin:0 0 20px}
+.sec-center-head{padding:4px 0}
+.sec-eyebrow{display:inline-flex;align-items:center;gap:8px;font:750 10px var(--mono);color:#b4c5ff;letter-spacing:1.3px}
+.sec-center h3{font:780 23px var(--body);letter-spacing:-.05em;color:#fff;margin:10px 0 5px}
+.sec-center h4{font:740 16px var(--body);margin:0 0 14px;color:#eff4ff}
+.sec-center p{font-size:12px;color:#b3bed5;line-height:1.6;margin:0}
+#sec-password-form,.sec-session-manage,.sec-notice{
+ border:1px solid #a4b9ff3f;background:linear-gradient(145deg,#b2c4ff15,#1b223a57);
+ box-shadow:inset 0 1px #ffffff20,0 12px 30px #0004;
+ border-radius:15px;padding:20px
+}
+.sec-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.sec-form-grid input{width:100%}
+.sec-hint{color:#9aa8c7!important;font-size:11px!important;margin:12px 0 17px!important}
+.sec-form-response:not(:empty){margin-top:11px;color:#c4d2ff;font-size:12px}
+.sec-session-manage h4{margin-bottom:5px}
+.sec-session-manage>p{margin-bottom:14px}
+.sec-revoke{margin-top:15px}
+.sec-sessions{display:flex;flex-direction:column;gap:9px}
+.sec-session{display:flex;justify-content:space-between;gap:12px;align-items:center;
+ padding:12px;border-radius:10px;background:#bbccff10;border:1px solid #a9bffc2d}
+.sec-session>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sec-session svg{color:#aec1ff}
+.sec-session b{font-size:12px;color:#e7edff}
+.sec-session small{font-size:10px;color:#889ab8;flex-basis:100%;margin-left:25px}
+.sec-session strong{font:730 9px var(--mono);color:#acc1ff;letter-spacing:.5px}
+.sec-notice{border-color:#f1cf925c;background:linear-gradient(125deg,#ebbc5811,#3e2f2c4d)}
+.sec-notice strong{font-size:12px;color:#f6d8a9}
+.sec-notice p{margin-top:5px}
+@media(max-width:750px){.sec-form-grid{grid-template-columns:1fr}.sec-center .v-button{max-width:100%;white-space:normal;text-align:center}.sec-session{align-items:flex-start}.sec-session>span{min-width:0}}
+@media(prefers-reduced-motion:reduce){.sec-center *, .sec-center *:before,.sec-center *:after{transition:none!important}}
+
+/* Authenticator and one-time recovery codes */
+.mfa-manager{border:1px solid #a4b9ff47;background:linear-gradient(150deg,#b2c4ff16,#17203a72);
+ box-shadow:inset 0 1px #ffffff26,0 12px 30px #0003;border-radius:16px;padding:21px}
+.mfa-head h4{font:750 17px var(--body);margin:10px 0 5px;color:#fff}
+.mfa-head p{font-size:12px;color:#b1bfd8;line-height:1.6;margin:0 0 20px}
+.mfa-manager form{display:grid;gap:12px;margin-top:14px}
+.mfa-manager .field{margin:0}
+.mfa-warn{padding:13px;background:#e9a94b17;border:1px solid #edc08953;border-radius:11px;color:#f3c899!important}
+.mfa-enabled{padding:13px;background:#75d3b31a;border:1px solid #8fdfc653;border-radius:11px}
+.mfa-enabled b{color:#9defd7;font-size:13px}
+.mfa-enabled p{margin:5px 0 0;font-size:11px}
+.mfa-secret{padding:15px;background:#aabdfa0b;border:1px solid #aec0ff25;border-radius:12px}
+.mfa-secret p{font-size:12px;line-height:1.6;margin:0 0 10px}
+.mfa-secret code{display:block;word-break:break-all;user-select:all;
+ font:750 15px var(--mono);letter-spacing:2px;color:#ebf3ff;background:#0d1730;padding:13px;border:1px solid #bbcdff44;border-radius:8px;margin-bottom:10px}
+.mfa-secret a{display:inline-block;color:#c0d1ff;font-size:12px;margin-bottom:14px;text-decoration:underline}
+.mfa-recovery-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:14px 0}
+.mfa-recovery-list code{display:block;font:680 11px var(--mono);color:#dae5ff;padding:10px;background:#0d1530;border:1px solid #9db6ff40;border-radius:7px;user-select:all;overflow-wrap:anywhere}
+.mfa-login>h2{font:760 31px var(--body)!important;letter-spacing:-.05em;margin:11px 0}
+.mfa-login>p{font-size:12px;color:#afbdd8;line-height:1.6}
+.mfa-login form{display:grid;gap:14px;margin:20px 0 8px}
+.mfa-login-msg:not(:empty),#mfa-login-msg:not(:empty){color:#ffb5aa;font-size:11px}
+@media(max-width:680px){.mfa-recovery-list{grid-template-columns:1fr}.mfa-manager{padding:15px}.mfa-manager .v-button{white-space:normal;max-width:100%}}
