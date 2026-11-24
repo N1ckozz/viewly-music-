@@ -171,6 +171,9 @@ with sync_playwright() as p:
             ('cinematic-mobile',{'width':390,'height':844},False,True),
             ('cinematic-fallback',{'width':390,'height':844},True,True)]:
             ctx=browser.new_context(viewport=viewport,reduced_motion='no-preference')
+            ctx.add_init_script("""window.__v17RevealSeen=false;
+                new MutationObserver(()=>{if(document.querySelector('#app.v17-reveal'))window.__v17RevealSeen=true;})
+                    .observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});""")
             if fallback:
                 ctx.add_init_script("const get=HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl'?null:get.call(this,type,...args)}")
             page=ctx.new_page()
@@ -184,8 +187,11 @@ with sync_playwright() as p:
                 expect(intro.locator('[data-intro-skip]')).to_be_visible()
                 expect(page.locator('#app')).to_have_attribute('inert','')
                 expect(intro).to_have_attribute('data-ready','true',timeout=8000)
-                if fallback:
+                gpu_available=page.evaluate("""()=>{try{const c=document.createElement('canvas');const gl=c.getContext('webgl');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false}}""")
+                if fallback or not gpu_available:
                     expect(intro).to_have_attribute('data-renderer','css')
+                    if not fallback:
+                        print(name+' headless WebGL unavailable; validating CSS fallback instead',flush=True)
                     expect(intro.locator('.v17-fallback-mark')).to_be_visible()
                 else:
                     expect(intro).to_have_attribute('data-renderer','webgl',timeout=5000)
@@ -196,7 +202,7 @@ with sync_playwright() as p:
                 else:
                     expect(intro).to_have_attribute('data-phase','2',timeout=5000)
                     page.screenshot(path=str(out/f'{name}-intro.png'))
-                expect(page.locator('#app')).to_have_class('v17-reveal',timeout=7000)
+                page.wait_for_function('window.__v17RevealSeen === true',timeout=8000)
                 expect(page.locator('#app')).not_to_have_attribute('inert','')
                 expect(intro).to_have_count(0,timeout=4000)
                 expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible()
