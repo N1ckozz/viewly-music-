@@ -42,6 +42,8 @@ jobs:
           node --check creator-campaigns.js
           node --check cpm-watchdog.js
           node --check analytics-core.js
+          node --check workspace-core.js
+          node --check public/v13.js
           node --check public/v11.js
           node --check public/v10.js
           node --check public/billing-ui.js
