@@ -1,3 +1,4 @@
+import {isPrivateCampaign,publicOnly} from './campaign-privacy.js';
 import {renderSocialFilm} from './film-export.js';
 import {feeBenefit,consumeBenefit} from './growth-core.js';
 import fs from 'node:fs';
@@ -36,6 +37,7 @@ export function catalog(db,at=new Date().toISOString()){
 }
 export function buildQuote(db,c,b,fail,at=new Date().toISOString()){
  const choices=JSON.parse(b.selections),all=catalog(db,at),lines=[],placements=[],seen=new Set();
+ const inviteOnly=isPrivateCampaign(db,c.id);if(inviteOnly&&choices.length)throw fail(422,'Invite-only campaigns cannot buy public promotion.');
  for(const key of choices){
   const p=all.find(x=>x.id===key);
   if(!p?.available)throw fail(409,'A selected promotion is unavailable. Change your selection.');
@@ -48,7 +50,7 @@ export function buildQuote(db,c,b,fail,at=new Date().toISOString()){
  }
  const media=db.prepare('SELECT id,sha256 FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY id').all(c.id);
  const benefit=feeBenefit(db,c.owner_id,c.fee_cents,at);
- const q={campaign_id:c.id,media,budget_cents:c.budget_cents,base_fee_cents:c.fee_cents,fee_cents:c.fee_cents-benefit.discount_cents,...benefit,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
+ const q={campaign_id:c.id,invite_only:inviteOnly,media,budget_cents:c.budget_cents,base_fee_cents:c.fee_cents,fee_cents:c.fee_cents-benefit.discount_cents,...benefit,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
  q.platform_revenue_cents=q.fee_cents+q.promo_cents;
  q.total_cents=q.budget_cents+q.platform_revenue_cents;
  return {...q,quote_hash:digest(q)};
@@ -60,7 +62,7 @@ export function campaignBrand(db,cid){
 }
 export function publicPromotions(db,at=new Date().toISOString()){
  if(!isSandboxBilling())return [];
- const rows=db.prepare("SELECT c.id,c.title,c.cpm_rate_cents,c.sandbox_funded_cents-c.sandbox_spent_cents AS remaining_cents,u.display_name AS artist_name,r.genre,b.headline,p.placement,p.ends_at FROM promo_placements p JOIN campaigns c ON c.id=p.campaign_id JOIN campaign_branding b ON b.campaign_id=c.id JOIN promo_orders o ON o.campaign_id=c.id JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id WHERE p.starts_at<=? AND p.ends_at>? AND c.status='sandbox_active' AND c.sandbox_funded_cents>c.sandbox_spent_cents AND c.moderation_status='visible' AND u.status='active' AND r.visibility='public' AND b.icon_file IS NOT NULL AND b.background_file IS NOT NULL ORDER BY p.starts_at DESC,c.id LIMIT 100").all(at,at);
+ const rows=db.prepare("SELECT c.id,c.title,c.cpm_rate_cents,c.sandbox_funded_cents-c.sandbox_spent_cents AS remaining_cents,u.display_name AS artist_name,r.genre,b.headline,p.placement,p.ends_at FROM promo_placements p JOIN campaigns c ON c.id=p.campaign_id JOIN campaign_branding b ON b.campaign_id=c.id JOIN promo_orders o ON o.campaign_id=c.id JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id WHERE p.starts_at<=? AND p.ends_at>? AND c.status='sandbox_active' AND c.sandbox_funded_cents>c.sandbox_spent_cents AND c.moderation_status='visible' AND u.status='active' AND r.visibility='public' AND b.icon_file IS NOT NULL AND b.background_file IS NOT NULL"+publicOnly(db)+" ORDER BY p.starts_at DESC,c.id LIMIT 100").all(at,at);
  return rows.map(x=>({...x,...campaignBrand(db,x.id),sandbox:true}));
 }
 let imageBusy=false;
@@ -107,6 +109,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
   }
   const actor=requireCreator(req);if(!owner)throw fail(404,'Campaign not found.');
   if(req.method==='POST'&&['social-video','milestone-video'].includes(action)){
+   if(isPrivateCampaign(db,c.id))throw fail(403,'Public sharing is disabled for invite-only campaigns.');
    limit(req,'social-film-export',4,3600000);
    if(!visible||c.status!=='sandbox_active'||c.sandbox_funded_cents<=c.sandbox_spent_cents)throw fail(409,'Campaign is not available for promotion.');
    const row=db.prepare('SELECT snapshot_json FROM campaign_launch_films WHERE campaign_id=? AND owner_id=?').get(c.id,actor.id);
@@ -173,7 +176,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
     const release=db.prepare('SELECT title,genre FROM releases WHERE id=?').get(current.release_id);
     const media=db.prepare('SELECT label,mime,bytes FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY id').all(c.id);
     const details=Object.fromEntries(['title','brief','platform','cpm_rate_cents','min_views','max_clip_cents','tracking_days','rules','mandatory_hashtags','sample_caption','prohibited_content','spotify_track_url','rights_confirmed'].map(k=>[k,current[k]]));
-    const snapshot={version:1,mode:'sandbox',payment_status:'test_confirmed',charged_cents:0,receipt_id:orderId,confirmed_at:at,campaign_id:c.id,artist:actor.display_name,release,details,media,branding:campaignBrand(db,c.id),quote:{budget_cents:q.budget_cents,base_fee_cents:q.base_fee_cents??q.fee_cents,discount_cents:q.discount_cents||0,fee_cents:q.fee_cents,promo_cents:q.promo_cents,total_cents:q.total_cents,lines:q.lines,placements:q.placements}};
+    const snapshot={version:1,invite_only:q.invite_only,mode:'sandbox',payment_status:'test_confirmed',charged_cents:0,receipt_id:orderId,confirmed_at:at,campaign_id:c.id,artist:actor.display_name,release,details,media,branding:campaignBrand(db,c.id),quote:{budget_cents:q.budget_cents,base_fee_cents:q.base_fee_cents??q.fee_cents,discount_cents:q.discount_cents||0,fee_cents:q.fee_cents,promo_cents:q.promo_cents,total_cents:q.total_cents,lines:q.lines,placements:q.placements}};
     db.prepare('INSERT INTO campaign_launch_films VALUES(?,?,?,?)').run(c.id,actor.id,JSON.stringify(snapshot),at);
     for(const x of q.placements)db.prepare('INSERT INTO promo_placements VALUES(?,?,?,?)').run(c.id,x.placement,at,new Date(Date.parse(at)+x.hours*3600000).toISOString());
     db.prepare("UPDATE campaigns SET status='sandbox_active',sandbox_funded_cents=budget_cents,sandbox_spent_cents=0,launched_at=? WHERE id=?").run(at,c.id);
