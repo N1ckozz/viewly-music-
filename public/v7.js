@@ -93,6 +93,7 @@ renderShell=function(inner){
 };
 const tools=[
  {page:'studio',icon:'studio',title:'Artist studio',desc:'Releases and campaign drafts'},
+ {page:'analytics',icon:'campaigns',title:'Creator analytics',desc:'Real charts, TikTok views, spending and clipper performance'},
  {page:'wallet',icon:'wallet',title:'Rewards',desc:'Real earnings and activity'},
  {page:'connections',icon:'user',title:'Connected accounts',desc:'Link TikTok for verified clip ownership and Spotify'},
  {page:'plans',icon:'bolt',title:'Plans & pricing',desc:'Monthly and yearly plans · free test mode'},
@@ -141,7 +142,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet','admin','plans','connections'].includes(place))return;
+ if(!['studio','wallet','admin','plans','connections','analytics'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});

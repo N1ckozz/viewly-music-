@@ -41,6 +41,8 @@ jobs:
           node --check social-oauth.js
           node --check creator-campaigns.js
           node --check cpm-watchdog.js
+          node --check analytics-core.js
+          node --check public/v11.js
           node --check public/v10.js
           node --check public/billing-ui.js
           node --check scripts/provision-admin.js
