@@ -49,7 +49,7 @@ test('genre widgets use real counts and preserve search and sorting',()=>{
  assert.match(page,/Popular/);
  assert.doesNotMatch(page,/OLD/);
  assert.match(page,/Trap, 2 releases/);
- assert.match(page,/Drill, 1 releases/); // accessible count is derived, never a guessed number
+ assert.match(page,/Drill, 1 release/); // accessible count is derived, never a guessed number
  assert.match(page,/Hip-Hop, 0 releases/);
  assert.equal((page.match(/data-v7-category=/g)||[]).length,7);
  const home=ctx.discover();
