@@ -124,3 +124,31 @@
  .bill-history{padding:15px}
 }
 @media(prefers-reduced-motion:reduce){.bill-card,.bill-cta,.bill-inline,.bill-cycle-selector button{transition:none!important;transform:none!important}}
+
+/* Real creator campaign simulation — prominent financial separation. */
+.bill-test-campaign,.bill-test-funding,.bill-wallet-test{
+ border:1px solid #94d8c454;border-radius:13px;padding:17px;
+ background:linear-gradient(135deg,#77c9b01b,#1e344647);margin:16px 0;
+}
+.bill-test-funding h3{font:710 19px var(--display);color:#e7fff5;margin:11px 0 8px;letter-spacing:-.035em}
+.bill-test-funding p,.bill-wallet-test p{font:520 11px/1.7 var(--body);color:#b5d9d2;margin:0 0 14px}
+.bill-test-funding .bill-cta{width:100%}
+.bill-campaign-test-flag{
+ display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 14px;margin-bottom:17px;
+ border:1px solid #9fdbbf7d;border-radius:10px;color:#c4f5df;background:#659a7c21;
+ font:700 10px/1.6 var(--mono);letter-spacing:.02em;
+}
+.bill-test-banner{display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:18px;
+ border:1px solid #87dcc071;border-radius:12px;color:#c8f0e3;
+ background:linear-gradient(110deg,#669f8740,#182c3d30);font:570 11px/1.7 var(--body)}
+.bill-test-banner svg{flex:none}
+.bill-test-banner b{font-weight:780;color:#d9fff2}
+.v6-campaign-card.is-sandbox{border-color:#8ecab068!important}
+.v6-campaign-card.is-sandbox .v6-card-status{color:#a5f1d2!important}
+.v6-campaign-card.is-sandbox .v6-budget-title span{color:#a3e7ce!important}
+.v6-campaign-card.is-sandbox:before{box-shadow:inset 0 1px #b0f0d02d}
+.bill-wallet-test{margin:0 0 17px}
+.bill-wallet-test h3{font:730 clamp(29px,4vw,38px)/1.08 var(--display);color:#c8f7df;margin:10px 0;letter-spacing:-.065em}
+.bill-wallet-test p{color:#c6dfd4}
+.bill-wallet-test .bill-inline{max-width:100%}
+@media(max-width:700px){.bill-test-banner{align-items:flex-start}.bill-test-funding{padding:13px}.bill-wallet-test{padding:15px}}
