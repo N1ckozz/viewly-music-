@@ -33,7 +33,7 @@ function receipt(f){
 }
 function shell(f){
  const bg=safePath(f.branding?.background_url,f.campaign_id,'background'),icon=safePath(f.branding?.icon_url,f.campaign_id,'icon');
- return '<section class="v17f" aria-label="Campaign launch film"><div class="v17f-top"><span>VIEWLY / ORIGINALS</span><span class="v17f-test">SANDBOX · NO REAL PAYMENT</span><button type="button" data-v17f="receipt">Skip to confirmation</button></div><div class="v17f-stage">'+(bg?'<img class="v17f-bg" src="'+escape(bg)+'" alt="">':'')+'<div class="v17f-grade"></div><div class="v17f-grid"></div><div class="v17f-orbit a"></div><div class="v17f-orbit b"></div><div class="v17f-flare"></div><div class="v17f-dust">'+Array.from({length:24},(_,i)=>'<i style="--x:'+((i*37+13)%100)+'%;--y:'+((i*61+9)%100)+'%;--d:'+((i%7)*-.6)+'s;--s:'+(i%4+1)+'px"></i>').join('')+'</div><div class="v17f-art">'+(icon?'<img src="'+escape(icon)+'" alt="">':'<span>V.</span>')+'</div><div class="v17f-content" aria-live="off"></div><div class="v17f-film-footer"><span>CAMPAIGN LAUNCH FILM</span><span class="v17f-scene-index"></span></div></div><div class="v17f-player"><div class="v17f-timeline" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><div class="v17f-controls"><button data-v17f="pause" type="button">Pause</button><button data-v17f="replay" type="button">Replay</button><button data-v17f="sound" type="button" aria-pressed="false">Enable sound</button><span class="v17f-time"></span><button data-v17f="open" type="button">Open campaign</button></div></div><details class="v17f-details"><summary>Full campaign information & order confirmation</summary>'+receipt(f)+'<div class="v17f-transcript">'+scenes(f).filter(s=>s.type!=='receipt').map(s=>'<section><h4>'+escape(s.title)+'</h4><p>'+escape(s.body)+'</p>'+s.items.map(([k,v])=>'<p>'+escape(k)+': '+escape(v)+'</p>').join('')+'</section>').join('')+'</div><button type="button" data-v17f="download">Download test confirmation</button></details></section>';
+ return '<section class="v17f" aria-label="Campaign launch film"><div class="v17f-top"><span>VIEWLY / ORIGINALS</span><span class="v17f-test">SANDBOX · NO REAL PAYMENT</span></div><div class="v17f-stage">'+(bg?'<img class="v17f-bg" src="'+escape(bg)+'" alt="">':'')+'<div class="v17f-grade"></div><div class="v17f-grid"></div><div class="v17f-orbit a"></div><div class="v17f-orbit b"></div><div class="v17f-flare"></div><div class="v17f-dust">'+Array.from({length:24},(_,i)=>'<i style="--x:'+((i*37+13)%100)+'%;--y:'+((i*61+9)%100)+'%;--d:'+((i%7)*-.6)+'s;--s:'+(i%4+1)+'px"></i>').join('')+'</div><div class="v17f-art">'+(icon?'<img src="'+escape(icon)+'" alt="">':'<span>V.</span>')+'</div><div class="v17f-content" aria-live="off"></div><div class="v17f-film-footer"><span>CAMPAIGN LAUNCH FILM</span><span class="v17f-scene-index"></span></div></div><div class="v17f-player"><div class="v17f-timeline" role="progressbar" aria-label="Film progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><div class="v17f-controls"><span class="v17f-time"></span><button data-v17f="open" type="button">Open campaign</button></div></div><section class="v17f-share"><div><span class="v17f-kicker">CAMPAIGN PROMO · 9:16</span><h3>Make your campaign seen.</h3><p>Share the 1080 × 1920 promotional video. Your private checkout confirmation is never included.</p></div><p class="v17f-export-state" role="status">Preparing your video…</p><div class="v17f-share-actions"><button type="button" data-v17f="share" disabled>Share video</button><button type="button" data-v17f="video" disabled>Download MP4</button><button type="button" data-v17f="copy">Copy campaign link</button><button type="button" data-v17f="retry" hidden>Retry video export</button></div><p>For Instagram Stories, select Instagram in your device share menu if available, or upload the downloaded MP4 and add the campaign link sticker.</p></section><details class="v17f-details"><summary>Full campaign information & order confirmation</summary>'+receipt(f)+'<div class="v17f-transcript">'+scenes(f).filter(s=>s.type!=='receipt').map(s=>'<section><h4>'+escape(s.title)+'</h4><p>'+escape(s.body)+'</p>'+s.items.map(([k,v])=>'<p>'+escape(k)+': '+escape(v)+'</p>').join('')+'</section>').join('')+'</div><button type="button" data-v17f="download">Download test confirmation</button></details></section>';
 }
 function audio(){
  try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;const ctx=new C();void ctx.resume().catch(()=>{});return ctx;}catch{return null;}
@@ -47,7 +47,7 @@ function soundCue(a,type){
  setTimeout(()=>{try{filter.disconnect();g.disconnect()}catch{}},700);
  }catch{}
 }
-function cleanup(){if(!active)return;const a=active;active=null;cancelAnimationFrame(a.frame);a.observer?.disconnect();if(a.ctx)void a.ctx.close().catch(()=>{});}
+function cleanup(){if(!active)return;const a=active;active=null;a.controller?.abort();a.video=null;cancelAnimationFrame(a.frame);a.observer?.disconnect();if(a.ctx)void a.ctx.close().catch(()=>{});}
 function draw(a,i){
  a.index=i;const s=a.scenes[i],el=a.el,content=el.querySelector('.v17f-content');
  el.dataset.scene=s.type;content.replaceChildren();
@@ -71,7 +71,7 @@ function tick(a,t){
  let acc=0,index=a.scenes.length-1;
  for(let i=0;i<a.scenes.length;i++){acc+=a.scenes[i].seconds;if(a.elapsed<acc){index=i;break;}}
  if(index!==a.index)draw(a,index);
- progress(a);if(a.elapsed>=a.total){a.playing=false;a.el.dataset.paused='true';a.el.querySelector('[data-v17f="pause"]').textContent='Play';}
+ progress(a);if(a.elapsed>=a.total){a.playing=false;a.el.dataset.paused='true';}
 }
 function openFilm(f,ctx=null){
  if(!valid(f)||!S.user){if(ctx)void ctx.close().catch(()=>{});return false;}
@@ -79,14 +79,38 @@ function openFilm(f,ctx=null){
  showOverlay(shell(f),'large v17f-modal');
  const el=document.querySelector('.v17f');if(!el){if(ctx)void ctx.close().catch(()=>{});return false;}
  const list=scenes(f),a={film:f,uid:S.user.id,el,ctx,sound:!!ctx,index:-1,elapsed:0,total:list.reduce((n,s)=>n+s.seconds,0),scenes:list,playing:!reduced(),last:0,frame:0};
- active=a;el.querySelector('[data-v17f="sound"]').textContent=a.sound?'Mute sound':'Enable sound';el.querySelector('[data-v17f="sound"]').setAttribute('aria-pressed',String(a.sound));
- if(!a.playing){a.elapsed=a.total;el.dataset.paused='true';el.querySelector('[data-v17f="pause"]').textContent='Play';draw(a,list.length-1);}else draw(a,0);
+ active=a;
+ if(!a.playing){a.elapsed=a.total;el.dataset.paused='true';draw(a,list.length-1);}else draw(a,0);
  progress(a);a.frame=requestAnimationFrame(t=>tick(a,t));
  a.observer=new MutationObserver(()=>{if(!el.isConnected&&active===a)cleanup();});a.observer.observe(document.querySelector('#overlay-root'),{childList:true,subtree:true});
+ void prepareVideo(a);
  return true;
 }
-function toReceipt(a){a.elapsed=a.total;a.playing=false;a.el.dataset.paused='true';a.el.querySelector('[data-v17f="pause"]').textContent='Play';draw(a,a.scenes.length-1);progress(a);}
-function replay(a){a.elapsed=0;a.last=0;a.playing=true;a.el.dataset.paused='false';a.el.querySelector('[data-v17f="pause"]').textContent='Pause';draw(a,0);progress(a);}
+function campaignLink(a){return location.origin+'/?campaign='+encodeURIComponent(a.film.campaign_id);}
+async function prepareVideo(a){
+ if(a.loading||a.video||active!==a)return;
+ a.loading=true;const status=a.el.querySelector('.v17f-export-state'),retry=a.el.querySelector('[data-v17f="retry"]');
+ status.textContent='Rendering your vertical MP4…';retry.hidden=true;
+ a.controller=new AbortController();
+ try{
+  const res=await fetch('/api/promotions/'+a.film.campaign_id+'/social-video',{method:'POST',headers:{'X-Viewly-Request':'1'},credentials:'same-origin',signal:a.controller.signal});
+  if(!res.ok){let error;try{error=(await res.json()).error}catch{}throw Error(error||'Video export unavailable');}
+  if(!res.headers.get('content-type')?.startsWith('video/mp4'))throw Error('Invalid video response');
+  const blob=await res.blob();if(active!==a||S.user?.id!==a.uid)return;
+  if(blob.size<1000||blob.size>24*1024*1024)throw Error('Invalid video size');
+  a.video=new File([blob],'VIEWLY-campaign.mp4',{type:'video/mp4'});
+  status.textContent='Your Story-ready video is ready.';
+  a.el.querySelector('[data-v17f="share"]').disabled=false;a.el.querySelector('[data-v17f="video"]').disabled=false;
+ }catch(e){if(active===a&&e.name!=='AbortError'){status.textContent=e.message;retry.hidden=false;}}
+ finally{a.loading=false;}
+}
+function downloadVideo(a){const u=URL.createObjectURL(a.video),link=document.createElement('a');link.href=u;link.download=a.video.name;link.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}
+async function shareVideo(a){
+ if(!a.video)return;
+ try{if(navigator.share&&navigator.canShare?.({files:[a.video]})){await navigator.share({files:[a.video],title:a.film.details.title,text:'Discover the campaign on VIEWLY · test campaign',url:campaignLink(a)});return;}}
+ catch(e){if(e.name==='AbortError')return;}
+ downloadVideo(a);toast('Video downloaded. Upload it to Instagram Stories or another social app and add the campaign link.');
+}
 async function fetchFilm(cid){
  const seq=++request,uid=S.user?.id,ctx=reduced()?null:audio();
  try{const {film}=await api('/promotions/'+cid+'/film');if(seq!==request||S.user?.id!==uid){if(ctx)void ctx.close().catch(()=>{});return;}if(!openFilm(film,ctx))throw Error('Invalid launch film record');}catch(e){if(ctx&&ctx.state!=='closed')void ctx.close().catch(()=>{});errorToast(e);}
@@ -96,10 +120,10 @@ document.addEventListener('click',ev=>{
  if(t.hasAttribute('data-v17f-reopen')){void fetchFilm(t.dataset.v17fReopen);return;}
  const a=active;if(!a||!a.el.contains(t))return;
  const cmd=t.dataset.v17f;
- if(cmd==='receipt')return toReceipt(a);
- if(cmd==='replay')return replay(a);
- if(cmd==='pause'){if(a.elapsed>=a.total)return replay(a);a.playing=!a.playing;a.el.dataset.paused=String(!a.playing);t.textContent=a.playing?'Pause':'Play';}
- if(cmd==='sound'){if(!a.ctx)a.ctx=audio();if(!a.ctx){toast('Audio is unavailable on this device.',true);return;}a.sound=!a.sound;if(a.sound){void a.ctx.resume().then(()=>soundCue(a,a.scenes[a.index].type)).catch(()=>{});}else void a.ctx.suspend().catch(()=>{});t.textContent=a.sound?'Mute sound':'Enable sound';t.setAttribute('aria-pressed',String(a.sound));}
+ if(cmd==='retry'){void prepareVideo(a);return;}
+ if(cmd==='video'&&a.video){downloadVideo(a);return;}
+ if(cmd==='share'){void shareVideo(a);return;}
+ if(cmd==='copy'){void navigator.clipboard.writeText(campaignLink(a)).then(()=>toast('Campaign link copied.')).catch(()=>toast('Copy the campaign link from: '+campaignLink(a),true));return;}
  if(cmd==='open'){const cid=a.film.campaign_id;cleanup();closeOverlay();campaignDetail(cid);}
  if(cmd==='download'){const f=a.film,q=f.quote;const txt=['VIEWLY — TEST ORDER CONFIRMATION','No real payment. Not a tax invoice.',f.details.title,'Order: '+f.receipt_id,'Confirmed: '+f.confirmed_at,'Reward pool: '+money(q.budget_cents),'Fee: '+money(q.fee_cents),'Referral discount: '+money(q.discount_cents),...q.lines.map(x=>x.label+': '+money(x.price_cents)),'Quoted total: '+money(q.total_cents),'Actual charge: '+money(f.charged_cents),'Thank you for creating with VIEWLY.'].join('\n');const u=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'})),link=document.createElement('a');link.href=u;link.download='VIEWLY-test-'+f.receipt_id+'.txt';link.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 },true);
