@@ -9,6 +9,7 @@ import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.
 import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
 import {startCpmWatchdog} from './cpm-watchdog.js';
 import {createAnalyticsHandler} from './analytics-core.js';
+import {initEcosystem,createEcosystemHandler} from './ecosystem-core.js';
 import {initGrowth,createGrowthHandler,accessFor,joinCampaign} from './growth-core.js';
 import {workspaceSummary} from './workspace-core.js';
 import {initPromotions,createPromotionHandler,campaignBrand} from './promotions-core.js';
@@ -61,6 +62,7 @@ initSocial(db);
 initCreatorCampaigns(db);
 initPromotions(db);
 initGrowth(db);
+initEcosystem(db);
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -282,6 +284,7 @@ const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,j
 const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
 const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
 startCpmWatchdog({db,id,now,fail,broadcast});
+const ecosystemHandler=createEcosystemHandler({db,sessionUser,requireUser,requireCreator,fail,json,send,now,id,limit,broadcast});
 const growthHandler=createGrowthHandler({db,requireUser,fail,json,send,now,limit});
 const promoHandler=createPromotionHandler({db,requireCreator,sessionUser,fail,json,send,now,id,broadcast,limit,readBody,multipart,serveFile,UPLOADS});
 const analyticsHandler=createAnalyticsHandler({db,requireCreator,fail,send});
@@ -309,6 +312,7 @@ async function handle(req,res){
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
+ if(pathname.startsWith('/api/ecosystem/'))return ecosystemHandler(req,res,url);
  if(pathname.startsWith('/api/growth/'))return growthHandler(req,res,url);
  if(pathname.startsWith('/api/promotions/'))return promoHandler(req,res,url);
  if(pathname==='/api/campaigns/v10'&&req.method==='POST'&&process.env.VIEWLY_V14_REQUIRED==='true')throw fail(409,'Use the V14 campaign builder.');
