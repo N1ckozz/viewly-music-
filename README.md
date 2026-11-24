@@ -66,3 +66,11 @@ Project: viewly-music. Environment: staging. Service: viewly-web.
 ## Security
 
 Do not commit provider secrets, wallet keys, real databases or passwords. Store secrets server-side. Validate user identity and role for every privileged operation. Maintain content licensing, privacy protection and moderation procedures. Complete an independent security and payment compliance review before allowing public paid campaigns.
+
+## V12 recovery and browser checks
+
+The private Railway bucket `viewly-backups` stores daily verified snapshots of SQLite and all referenced release, clip and campaign media. The worker runs with the application, uses SQLite's online backup API, verifies a restore in temporary storage, downloads the new object to verify its SHA-256, and keeps seven recent backups. No backup is publicly served. A backup failure is logged without exposing credentials. Set `VIEWLY_BACKUPS_ENABLED=true` and the five `VIEWLY_BACKUP_*` connection variables using Railway bucket references (never commit secrets). Storage and network usage can incur charges. This is not an immutable off-account backup and requires separate monitoring; preserve the existing MFA master key and other provider secrets securely outside the archive.
+
+To restore, retrieve a verified archive using authorized private bucket credentials, check the SHA-256 against object metadata, and run `python3 scripts/backup.py restore snapshot.tar.gz /path/to/empty-recovery-directory`. Do not restore over live files. Stop writes and arrange an isolated deployment before switching storage; verify accounts, media, campaign records, credentials and invalidate restored sessions before reopening. Backups do not recover files lost before the volume was provisioned.
+
+Browser and recovery CI runs actual Chromium at desktop and mobile widths against an isolated app and the staging URL. Guest screenshots are attached as short-lived CI artifacts. The browser suite tests header geometry, rail visibility and persisted preference, mobile creator tools, navigation and JavaScript errors. No real-user data is written by the smoke test.
