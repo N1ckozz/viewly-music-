@@ -44,6 +44,22 @@ with sync_playwright() as p:
                 expect(page.locator('.v13-chart .v13-bar-slot')).to_have_count(7,timeout=15000)
             elif '127.0.0.1' in base:
                 raise AssertionError('V13 creator hub missing from local build')
+            if page.locator('.e18-home').count():
+                expect(page.locator('.e18-hero')).to_be_visible()
+                expect(page.locator('.e18-shortcuts button')).to_have_count(4)
+                page.locator('.e18-shortcuts [data-page="leaderboard"]').click()
+                expect(page.locator('.e18-heading h1')).to_have_text('Clipper rankings.')
+                expect(page.locator('.e18-ranking,.e18-empty').first).to_be_visible()
+                page.locator('.v-topbar [data-e18-search]').click()
+                expect(page.locator('#e18-search-form')).to_be_visible()
+                page.locator('#e18-search-form input').fill('no-match-v18')
+                page.locator('#e18-search-form button').click()
+                expect(page.locator('#e18-results')).to_contain_text('No matches')
+                page.locator('#overlay .modal-close').click()
+                page.locator('.v-bottom-nav [data-page="discover"]').click() if name=='mobile' else page.locator('#viewly-desktop-navigation [data-page="discover"]').click()
+                expect(page.locator('.e18-home')).to_be_visible()
+            elif '127.0.0.1' in base:
+                raise AssertionError('V18 discovery missing')
             page.screenshot(path=str(out/f'{name}-home.png'),full_page=True,animations='disabled')
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2'), 'Horizontal document overflow'
             if name=='desktop':
@@ -116,6 +132,15 @@ with sync_playwright() as p:
                         subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s='+size,'-frames:v','1','-threads','1','-y',str(root/(kind+'.png'))],check=True,timeout=25)
                     page.goto(base,wait_until='domcontentloaded')
                     expect(page.locator('.v13-status')).to_contain_text('Live database',timeout=20000)
+                    rid=rel.json()['release']['id']
+                    saved=page.request.post(base+'/api/ecosystem/save',headers=headers,data={'id':rid,'kind':'release','saved':True})
+                    assert saved.ok,saved.text()
+                    assert any(r['id']==rid for r in page.request.get(base+'/api/ecosystem/saved').json()['releases'])
+                    expect(page.locator('.e18-release').first).to_be_visible(timeout=15000)
+                    page.locator('.e18-shortcuts [data-page="saved"]').click()
+                    expect(page.locator('.e18-heading h1')).to_have_text('Saved library.')
+                    expect(page.locator('.e18-release h3').first).to_contain_text('CI original')
+                    page.locator('.v-bottom-nav [data-page="discover"]').click() if name=='mobile' else page.locator('#viewly-desktop-navigation [data-page="discover"]').click()
                     page.locator('[data-action="create-campaign"]:visible').first.click()
                     expect(page.locator('#v14-form')).to_be_visible()
                     form=page.locator('#v14-form')

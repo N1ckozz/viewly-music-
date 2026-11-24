@@ -85,7 +85,7 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
     recent:audit(12),note:'Internal events are not externally verified social views or spendable earnings.'});
   }
   if(path==='/api/admin/users'&&verb==='GET'){
-   const rows=list("SELECT u.id,u.email,u.username,u.display_name,u.role,u.status,u.email_verified,u.created_at,(SELECT count(*) FROM releases r WHERE r.owner_id=u.id) AS releases_count FROM users u WHERE u.username LIKE ? OR u.display_name LIKE ? OR u.email LIKE ? ORDER BY u.created_at DESC LIMIT 50 OFFSET ?",[q,q,q,offset]);
+   const rows=list("SELECT u.id,u.email,u.username,u.display_name,u.role,u.status,u.email_verified,u.created_at,EXISTS(SELECT 1 FROM ecosystem_profile_reviews p WHERE p.user_id=u.id) AS profile_reviewed,(SELECT count(*) FROM releases r WHERE r.owner_id=u.id) AS releases_count FROM users u WHERE u.username LIKE ? OR u.display_name LIKE ? OR u.email LIKE ? ORDER BY u.created_at DESC LIMIT 50 OFFSET ?",[q,q,q,offset]);
    return send(res,200,{rows});
   }
   if(path==='/api/admin/releases'&&verb==='GET'){
@@ -158,6 +158,17 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
      log(admin,'site.setting','setting',key,{value:old},{value});});
     broadcast('site-settings');return send(res,200,{ok:true,settings:siteSettings(db)});
    }
+  }
+  const profileMatch=path.match(/^\/api\/admin\/profile-review\/([a-f0-9-]{36})$/);
+  if(profileMatch&&verb==='POST'){
+   const target=fetchRecord('users',profileMatch[1],'id,role,status,email_verified'),b=await json(req);
+   if(target.role==='admin'||target.id===admin.id||typeof b.enabled!=='boolean'||typeof b.note!=='string'||b.note.trim().length<15||b.note.length>500)throw fail(422,'Provide a review decision and evidence note.');
+   if(b.enabled&&(target.status!=='active'||target.email_verified!==1))throw fail(409,'Account must be active and email verified.');
+   transaction(()=>{const prior=db.prepare('SELECT * FROM ecosystem_profile_reviews WHERE user_id=?').get(target.id);
+    if(b.enabled)db.prepare('INSERT INTO ecosystem_profile_reviews VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET reviewed_by=excluded.reviewed_by,reviewed_at=excluded.reviewed_at').run(target.id,admin.id,now());
+    else db.prepare('DELETE FROM ecosystem_profile_reviews WHERE user_id=?').run(target.id);
+    log(admin,'profile.review','user',target.id,{reviewed:!!prior},{reviewed:b.enabled,note:b.note.trim()});});
+   broadcast('profile-review');return send(res,200,{ok:true});
   }
   const m=path.match(/^\/api\/admin\/(users|releases|campaigns|submissions|reports|comments)\/([a-f0-9-]{36})$/i);
   if(!m||!['PATCH','DELETE'].includes(verb))throw fail(404,'Admin operation not found.');

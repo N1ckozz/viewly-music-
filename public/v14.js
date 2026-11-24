@@ -24,6 +24,7 @@ function step(n){
  f.querySelector('[data-v14-back]').hidden=n===0||(n===2&&draft.cid&&f.elements.title.disabled);
  f.querySelector('[data-v14-next]').hidden=n===6;
  f.querySelector('[data-v14-next]').textContent=n===5?'Save & review final checkout':'Continue';
+ if(n===4){const privateMode=!!f.elements.invite_only?.checked;for(const x of f.querySelectorAll('input[name=promo]')){if(privateMode)x.checked=false;x.disabled=privateMode||!V.catalog.find(p=>p.id===x.value)?.available;}if(privateMode)state('Invite-only campaign: public promotions are disabled.');}
  if(n===5)preview(f);
  updateEstimate(f);
 }
@@ -31,7 +32,7 @@ async function getCatalog(){const x=await api('/promotions/catalog');V.catalog=x
 function wizardHTML(releases,info,catalog){
  const c=info?.campaign,b=info?.branding;
  const locked=!!c;
- const basics='<div class="v14-grid"><label>Original music release<select name="release_id" required>'+releases.map(r=>'<option value="'+e(r.id)+'">'+e(r.title)+'</option>').join('')+'</select></label>'+field('title','Campaign title','text','minlength="3" maxlength="100" required')+'</div>'+ta('brief','Full brief & deliverables','minlength="60" maxlength="4500" required rows="5"')+field('spotify_track_url','Spotify track (optional)','url')+field('mandatory_hashtags','Mandatory hashtags','text','maxlength="180"')+field('sample_caption','Suggested caption','text','maxlength="280"')+ta('rules','Creative rules','maxlength="2000" rows="3"')+ta('prohibited_content','Prohibited edits','maxlength="800" rows="2"');
+ const basics='<div class="v14-grid"><label>Original music release<select name="release_id" required>'+releases.map(r=>'<option value="'+e(r.id)+'">'+e(r.title)+'</option>').join('')+'</select></label>'+field('title','Campaign title','text','minlength="3" maxlength="100" required')+'</div>'+ta('brief','Full brief & deliverables','minlength="60" maxlength="4500" required rows="5"')+field('spotify_track_url','Spotify track (optional)','url')+field('mandatory_hashtags','Mandatory hashtags','text','maxlength="180"')+field('sample_caption','Suggested caption','text','maxlength="280"')+ta('rules','Creative rules','maxlength="2000" rows="3"')+ta('prohibited_content','Prohibited edits','maxlength="800" rows="2"')+'<label class="v14-check"><input type="checkbox" name="invite_only" '+(c?.invite_only?'checked ':'')+(locked?'disabled':'')+'> Invite-only campaign · visible only to you and accepted invitees. Public promotions and sharing are disabled.</label>';
  const rewards='<div class="v14-grid">'+field('rate_eur_per_1000','CPM (€ / 1,000 TikTok views)','number','min=".5" max="10" step=".01" value="1" required')+field('budget_eur','Clipper reward pool (€)','number','min="10" max="100000" step=".01" value="100" required')+field('max_per_clip_eur','Maximum per clip (€)','number','min=".5" step=".01" value="25" required')+field('min_views','Minimum views','number','min="100" max="1000000" step="1" value="1000" required')+field('tracking_days','Tracking days','number','min="7" max="60" value="30" required')+'</div><p>Promotion fees never reduce the clipper reward pool.</p>';
  const branding='<div class="v14-grid">'+['icon','background'].map(n=>'<label class="v14-upload"><b>'+(n==='icon'?'Campaign icon · 1:1':'Background · 16:9')+'</b><span>'+(n==='icon'?'1024 × 1024 minimum · 10 MB':'1600 × 900 minimum · 15 MB')+'</span><input name="'+n+'" type="file" accept="image/jpeg,image/png,image/webp" '+(!b?.[n+'_url']?'required':'')+'><small data-v14-image="'+n+'">'+(b?.[n+'_url']?'Saved image ✓':'JPEG, PNG or WebP')+'</small></label>').join('')+'</div>'+field('headline','Promo headline','text','maxlength="120"');
  const kit='<label class="v14-upload">Creative pack (optional)<input name="assets" type="file" multiple accept="video/mp4,video/webm,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,application/pdf"><small>Up to 16 assets / 200 MB. Original release is included.</small></label><label class="v14-check"><input name="rights_confirmed" type="checkbox" required '+(locked?'checked disabled':'')+'> I have the rights to distribute the music and uploaded assets, and agree that recorded evidence cannot be erased later.</label>';
@@ -74,7 +75,7 @@ async function save(f){
  if(!draft.cid){
   const body={};for(const k of ['release_id','title','brief','spotify_track_url','mandatory_hashtags','sample_caption','rules','prohibited_content'])body[k]=f.elements[k].value;
   for(const k of ['rate_eur_per_1000','max_per_clip_eur','budget_eur','min_views','tracking_days'])body[k]=Number(f.elements[k].value);
-  body.rights_confirmed=f.elements.rights_confirmed.checked;
+  body.rights_confirmed=f.elements.rights_confirmed.checked;body.invite_only=!!f.elements.invite_only?.checked;
   state('Creating private campaign draft…');const x=await api('/campaigns/v14','POST',body);draft.cid=x.campaign.id;draft.title=body.title;
   for(const x of f.querySelectorAll('.v14-step:nth-child(-n+2) input,.v14-step:nth-child(-n+2) textarea,.v14-step:nth-child(-n+2) select'))x.disabled=true;
   f.elements.rights_confirmed.disabled=true;
@@ -94,7 +95,7 @@ document.addEventListener('click',async ev=>{
  const t=ev.target.closest('[data-v14-next],[data-v14-back],[data-v14-pay],[data-v14-save],[data-v14-resume],[data-v14-open]');
  if(!t)return;ev.preventDefault();ev.stopImmediatePropagation();
  if(t.hasAttribute('data-v14-resume'))return void wizard(t.dataset.v14Resume);
- if(t.hasAttribute('data-v14-open')){const cid=t.dataset.v14Open;try{const x=await api('/campaigns/'+cid);if(!S.campaigns.some(c=>c.id===cid))S.campaigns.push(x.campaign);campaignDetail(cid);}catch(err){errorToast(err);}return;}
+ if(t.hasAttribute('data-v14-open')){const cid=t.dataset.v14Open;if(S.user&&t.dataset.v18Placement)void api('/ecosystem/promo-click','POST',{id:cid,placement:t.dataset.v18Placement}).catch(()=>{});try{const x=await api('/campaigns/'+cid);if(!S.campaigns.some(c=>c.id===cid))S.campaigns.push(x.campaign);campaignDetail(cid);}catch(err){errorToast(err);}return;}
  if(t.hasAttribute('data-v14-save')){clearUrls();closeOverlay();await refresh(true);return;}
  const f=currentForm();if(!f||!draft||V.saving)return;
  if(t.hasAttribute('data-v14-back')){state('');step(Math.max(0,draft.step===6?4:draft.step-1));return;}
@@ -121,7 +122,7 @@ document.addEventListener('input',ev=>{const f=ev.target.closest('#v14-form');if
 document.addEventListener('submit',ev=>{if(ev.target.id==='v14-form'){ev.preventDefault();ev.stopImmediatePropagation();}},true);
 async function loadFeatured(force=false){if(V.busy){if(force)V.pending=true;return;}if(!force&&(Date.now()-V.loaded<60000||Date.now()<V.retry))return;V.busy=true;try{const x=await api('/promotions/featured');V.featured=x.items||[];V.loaded=Date.now();V.retry=0;if(['discover','campaigns'].includes(S.page))render();}catch{V.retry=Date.now()+3000;setTimeout(()=>{if(['discover','campaigns'].includes(S.page)&&!document.hidden)void loadFeatured();},3100);}finally{V.busy=false;if(V.pending){V.pending=false;void loadFeatured(true);}}}
 function sponsored(items,title){if(!items.length)return '';const unique=[...new Map(items.map(x=>[x.id,x])).values()].slice(0,8);
- return '<section class="v14-sponsored"><div class="v14-section-title"><div><span class="v14-eyebrow">SPONSORED PLACEMENT · SANDBOX</span><h2>'+title+'</h2></div></div><div class="v14-feature-grid">'+unique.map(x=>'<div>'+previewHTML(x.title,x.headline||x.artist_name,x.icon_url,x.background_url,x.cpm_rate_cents,x.remaining_cents,true)+'<div class="v14-promo-bottom"><span>'+e(x.artist_name)+' · until '+e(new Date(x.ends_at).toLocaleDateString())+'</span><button type="button" data-v14-open="'+e(x.id)+'">View campaign '+icon('arrow',14)+'</button></div></div>').join('')+'</div></section>';
+ return '<section class="v14-sponsored"><div class="v14-section-title"><div><span class="v14-eyebrow">SPONSORED PLACEMENT · SANDBOX</span><h2>'+title+'</h2></div></div><div class="v14-feature-grid">'+unique.map(x=>'<div>'+previewHTML(x.title,x.headline||x.artist_name,x.icon_url,x.background_url,x.cpm_rate_cents,x.remaining_cents,true)+'<div class="v14-promo-bottom"><span>'+e(x.artist_name)+' · until '+e(new Date(x.ends_at).toLocaleDateString())+'</span><button type="button" data-v14-open="'+e(x.id)+'" data-v18-placement="'+e(x.placement)+'">View campaign '+icon('arrow',14)+'</button></div></div>').join('')+'</div></section>';
 }
 const placement=(key,title)=>sponsored(V.featured.filter(x=>x.placement===key),title);
 const oldDiscover=discover;discover=function(){return placement('home','Featured campaigns')+oldDiscover()+placement('launch','New campaign launches')+placement('creator','Creator opportunities')+placement('recommended','Sponsored recommendations');};
