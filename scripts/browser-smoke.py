@@ -5,7 +5,7 @@ base=os.environ['VIEWLY_BROWSER_URL'].rstrip('/')
 out=pathlib.Path(os.environ.get('VIEWLY_SCREENSHOT_DIR','browser-results'))
 out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
-    browser=p.chromium.launch(headless=True)
+    browser=p.chromium.launch(headless=True,args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
     for width,height,name in [(1440,900,'desktop'),(390,844,'mobile')]:
         context=browser.new_context(viewport={'width':width,'height':height},reduced_motion='reduce',is_mobile=name=='mobile',has_touch=name=='mobile')
         page=context.new_page()
@@ -141,15 +141,77 @@ with sync_playwright() as p:
                     assert page.request.get(base+'/api/promotions/featured').json()['items']==[] or name=='mobile'
                     form.locator('#v14-confirm').check()
                     form.locator('[data-v14-pay]').click()
+                    film=page.locator('.v17f')
+                    expect(film).to_be_visible(timeout=20000)
+                    expect(film.locator('.v17f-stage .v17f-receipt')).to_be_visible()
+                    expect(film.locator('.v17f-stage')).to_contain_text('€0.00')
+                    expect(film.locator('.v17f-stage')).to_contain_text('CI campaign '+name)
+                    expect(film.locator('.v17f-test')).to_contain_text('NO REAL PAYMENT')
+                    page.screenshot(path=str(out/f'v17-{name}-film-receipt.png'),animations='disabled')
+                    film.locator('[data-v17f="replay"]').click()
+                    expect(film.locator('.v17f-stage')).to_contain_text('Your music. Your moment.')
+                    film.locator('[data-v17f="receipt"]').click()
+                    expect(film.locator('.v17f-stage .v17f-receipt')).to_be_visible()
+                    film.locator('[data-v17f="open"]').click()
                     expect(page.locator('.v10-detail h2')).to_contain_text('CI campaign '+name,timeout=20000)
                     page.reload(wait_until='domcontentloaded')
-                    expect(page.locator('.v14-sponsored [data-v14-open]').first).to_be_visible(timeout=15000)
-                    assert any(x['title']=='CI campaign '+name and x['sandbox'] for x in page.request.get(base+'/api/promotions/featured').json()['items'])
+                    page.locator('#app-loader').wait_for(state='hidden',timeout=16000)
+                    expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible(timeout=20000)
+                    featured=page.request.get(base+'/api/promotions/featured')
+                    assert featured.ok,featured.text()
+                    assert any(x['title']=='CI campaign '+name and x['sandbox'] for x in featured.json()['items'])
+                    expect(page.locator('.v14-sponsored [data-v14-open]').first).to_be_visible(timeout=20000)
                     page.screenshot(path=str(out/f'v14-{name}-featured.png'),animations='disabled')
                     assert not errors,errors
                     print('V14 '+name+' actual wizard, assets, final checkout and sponsored placement passed',flush=True)
             except Exception:
                 page.screenshot(path=str(out/f'v14-{name}-failure.png'),full_page=True)
                 raise
+            finally: ctx.close()
+    if '127.0.0.1' in base:
+        # Test the cinematic independently of the reduced-motion workflow suite.
+        for name,viewport,fallback,skip_intro in [
+            ('cinematic-desktop',{'width':1440,'height':900},False,False),
+            ('cinematic-mobile',{'width':390,'height':844},False,True),
+            ('cinematic-fallback',{'width':390,'height':844},True,True)]:
+            ctx=browser.new_context(viewport=viewport,reduced_motion='no-preference')
+            ctx.add_init_script("""window.__v17RevealSeen=false;
+                new MutationObserver(()=>{if(document.querySelector('#app.v17-reveal'))window.__v17RevealSeen=true;})
+                    .observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});""")
+            if fallback:
+                ctx.add_init_script("const get=HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl'?null:get.call(this,type,...args)}")
+            page=ctx.new_page()
+            errors=[]
+            page.on('pageerror',lambda err: errors.append(str(err)))
+            page.on('console',lambda msg: print(msg.text,flush=True) if 'VIEWLY cinematic fallback' in msg.text else None)
+            try:
+                page.goto(base,wait_until='domcontentloaded')
+                intro=page.locator('#app-loader.v17-intro')
+                expect(intro).to_be_visible(timeout=5000)
+                expect(intro.locator('[data-intro-skip]')).to_be_visible()
+                expect(page.locator('#app')).to_have_attribute('inert','')
+                expect(intro).to_have_attribute('data-ready','true',timeout=8000)
+                gpu_available=page.evaluate("""()=>{try{const c=document.createElement('canvas');const gl=c.getContext('webgl');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false}}""")
+                if fallback or not gpu_available:
+                    expect(intro).to_have_attribute('data-renderer','css')
+                    if not fallback:
+                        print(name+' headless WebGL unavailable; validating CSS fallback instead',flush=True)
+                    expect(intro.locator('.v17-fallback-mark')).to_be_visible()
+                else:
+                    expect(intro).to_have_attribute('data-renderer','webgl',timeout=5000)
+                    expect(intro.locator('canvas')).to_be_visible()
+                    assert page.locator('canvas').first.evaluate('(c)=>c.width>10&&c.height>10')
+                if skip_intro:
+                    intro.locator('[data-intro-skip]').click()
+                else:
+                    expect(intro).to_have_attribute('data-phase','2',timeout=5000)
+                    page.screenshot(path=str(out/f'{name}-intro.png'))
+                page.wait_for_function('window.__v17RevealSeen === true',timeout=8000)
+                expect(page.locator('#app')).not_to_have_attribute('inert','')
+                expect(intro).to_have_count(0,timeout=4000)
+                expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible()
+                assert not errors,errors
+                page.screenshot(path=str(out/f'{name}-finished.png'),animations='disabled')
+                print(name+' intro, handoff and cleanup passed',flush=True)
             finally: ctx.close()
     browser.close()

@@ -84,8 +84,12 @@ test('V14 real API: private draft, mandatory images, final quote, atomic sandbox
   const quote=(await request(p+'/quote','GET',undefined,'artist-test')).body.quote;assert.equal(quote.total_cents,15499);
   assert.deepEqual((await request('/promotions/featured')).body.items,[]);
   assert.equal((await request(p+'/checkout','POST',{confirm:true,quote_hash:'fake'},'artist-test')).status,409);
+  assert.equal((await request(p+'/film','GET',undefined,'artist-test')).status,404);
   const checkout=await request(p+'/checkout','POST',{confirm:true,quote_hash:quote.quote_hash},'artist-test');assert.equal(checkout.status,201,JSON.stringify(checkout.body));assert.equal(checkout.body.charged_cents,0);
-  assert.equal((await request(p+'/checkout','POST',{confirm:true,quote_hash:quote.quote_hash},'artist-test')).status,200);
+  const film=checkout.body.film;assert.equal(film.payment_status,'test_confirmed');assert.equal(film.charged_cents,0);assert.equal(film.quote.total_cents,15499);assert.equal(film.details.title,body.title);assert.equal(film.details.brief,body.brief);assert.equal(film.quote.lines[0].id,'growth');
+  assert.deepEqual((await request(p+'/film','GET',undefined,'artist-test')).body.film,film);
+  assert.equal((await request(p+'/film','GET',undefined,'other-test')).status,404);assert.equal((await request(p+'/film')).status,401);
+  const retry=await request(p+'/checkout','POST',{confirm:true,quote_hash:quote.quote_hash},'artist-test');assert.equal(retry.status,200);assert.deepEqual(retry.body.film,film);
   const visible=(await request('/promotions/featured')).body.items;assert.equal(visible.length,3);assert.ok(visible.every(x=>x.id===cid&&x.sandbox&&x.remaining_cents===10000));
   assert.equal((await request(p+'/image/icon')).status,200);
   const check=new DatabaseSync(join(dir,'data','viewly.sqlite'));assert.equal(check.prepare('SELECT paid_cents FROM campaigns WHERE id=?').get(cid).paid_cents,0);assert.equal(check.prepare('SELECT count(*) AS n FROM wallet_ledger').get().n,0);assert.equal(check.prepare('SELECT count(*) AS n FROM promo_orders').get().n,1);check.close();
