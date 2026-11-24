@@ -37,6 +37,7 @@ jobs:
           node --check public/admin-ui.js
           node --check public/auth-ui.js
           node --check billing-core.js
+          node --check sandbox-campaigns.js
           node --check public/billing-ui.js
           node --check scripts/provision-admin.js
       - name: Real backend integration tests
