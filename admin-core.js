@@ -129,7 +129,8 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   if(type==='users'&&verb==='PATCH'){
    before=fetchRecord('users',key,'id,role,status,username');
    if(before.role==='admin'||before.id===admin.id)throw fail(403,'Admin role cannot be changed through the website.');
-   const b=await json(req),role='role' in b?b.role:before.role,status='status' in b?b.status:before.status;
+   const b=await json(req);if(Object.keys(b).some(k=>!['role','status'].includes(k)))throw fail(422,'Unsupported account field.');
+   const role='role' in b?b.role:before.role,status='status' in b?b.status:before.status;
    if(!['viewer','artist','label'].includes(role)||!['active','suspended'].includes(status))throw fail(422,'Invalid account change.');
    transaction(()=>{
     db.prepare('UPDATE users SET role=?,status=? WHERE id=?').run(role,status,key);
@@ -140,7 +141,8 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   }
   if(type==='releases'&&verb==='PATCH'){
    before=fetchRecord('releases',key,'id,title,description,genre,visibility');
-   const b=await json(req),title='title' in b?short(b.title,90):before.title,
+   const b=await json(req);if(Object.keys(b).some(k=>!['title','description','genre','visibility'].includes(k)))throw fail(422,'Unsupported release field.');
+   const title='title' in b?short(b.title,90):before.title,
     description='description' in b?short(b.description,900):before.description,
     genre='genre' in b?b.genre:before.genre,visibility='visibility' in b?b.visibility:before.visibility;
    if(title.length<2||!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre)||!['public','hidden'].includes(visibility))throw fail(422,'Invalid release update.');
@@ -152,7 +154,8 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   }
   if(type==='campaigns'&&verb==='PATCH'){
    before=fetchRecord('campaigns',key,'id,title,brief,platform,moderation_status,status,paid_cents,spent_cents');
-   const b=await json(req),title='title' in b?short(b.title,100):before.title,brief='brief' in b?short(b.brief,1200):before.brief,
+   const b=await json(req);if(Object.keys(b).some(k=>!['title','brief','platform','moderation_status'].includes(k)))throw fail(422,'Financial and system fields cannot be changed here.');
+   const title='title' in b?short(b.title,100):before.title,brief='brief' in b?short(b.brief,1200):before.brief,
     platform='platform' in b?b.platform:before.platform,moderation='moderation_status' in b?b.moderation_status:before.moderation_status;
    if(title.length<2||brief.length<15||!['Any','TikTok','Instagram Reels','YouTube Shorts'].includes(platform)||!['visible','hidden'].includes(moderation))
     throw fail(422,'Invalid campaign update.');
@@ -162,7 +165,8 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   }
   if(type==='submissions'&&verb==='PATCH'){
    before=fetchRecord('submissions',key,'id,moderation_flag,moderation_note,status');
-   const b=await json(req),flag=String(b.moderation_flag||''),note=short(b.moderation_note||'',400);
+   const b=await json(req);if(Object.keys(b).some(k=>!['moderation_flag','moderation_note'].includes(k)))throw fail(422,'Reward status cannot be changed manually.');
+   const flag=String(b.moderation_flag||''),note=short(b.moderation_note||'',400);
    if(!['clear','flagged'].includes(flag))throw fail(422,'Invalid submission flag.');
    transaction(()=>{db.prepare('UPDATE submissions SET moderation_flag=?,moderation_note=? WHERE id=?').run(flag,note,key);
     log(admin,'submission.flag','submission',key,{moderation_flag:before.moderation_flag},{moderation_flag:flag,note});});
@@ -171,6 +175,7 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   if(type==='reports'&&verb==='PATCH'){
    before=fetchRecord('content_reports',key,'id,status');
    const b=await json(req);
+   if(Object.keys(b).some(k=>k!=='status'))throw fail(422,'Unsupported report field.');
    if(!['open','reviewed','dismissed'].includes(b.status))throw fail(422,'Invalid report state.');
    transaction(()=>{db.prepare('UPDATE content_reports SET status=?,resolved_by=?,resolved_at=? WHERE id=?')
      .run(b.status,b.status==='open'?null:admin.id,b.status==='open'?null:now(),key);
