@@ -10,7 +10,7 @@ function wrap(v,n,max){const a=Array.from(clean(v,n*max*2)),out=[];while(a.lengt
 const euros=n=>new Intl.NumberFormat('en-IE',{style:'currency',currency:'EUR'}).format((Number(n)||0)/100);
 export function publicFilmSpec(f){
  if(f?.version!==1||f.mode!=='sandbox'||f.payment_status!=='test_confirmed'||f.charged_cents!==0)throw Error('Confirmed test order required');
- return {title:wrap(f.details.title,19,3),artist:wrap(f.artist,30,2),headline:wrap(f.branding.headline||'Join the campaign on VIEWLY',27,3),rate:euros(f.details.cpm_rate_cents),pool:euros(f.quote.budget_cents),platform:clean(f.details.platform||'TikTok',30),test:true};
+ return {title:wrap(f.details.title,16,3),artist:wrap(f.artist,30,2),headline:wrap(f.branding.headline||'Join the campaign on VIEWLY',27,3),rate:euros(f.details.cpm_rate_cents),pool:euros(f.quote.budget_cents),platform:clean(f.details.platform||'TikTok',30),test:true};
 }
 let busy=false;
 export async function renderSocialFilm(f,branding,uploads,fail){
@@ -35,10 +35,10 @@ export async function renderSocialFilm(f,branding,uploads,fail){
   filters[2]+=','+[
    draw('brand',112,38,0,12,true,'0xc3d9ff'),
    draw('test',178,32,0,12,true,'0xffdca3'),
-   draw('title',970,69,0,4,true),draw('artist',1285,43,0,4,false,'0xc7d7f4'),
+   draw('title',925,58,0,4,true),draw('artist',1285,32,0,4,false,'0xc7d7f4'),
    draw('rate',985,70,4,8,true),draw('pool',1270,44,4,8,true,'0xc7d7f4'),
    draw('platform',1380,34,4,8,false,'0xc7d7f4'),
-   draw('cta',970,48,8,12,true,'0xc3d9ff'),draw('headline',1230,48,8,12,true),
+   draw('cta',970,48,8,12,true,'0xc3d9ff'),draw('headline',1230,36,8,12,true),
    draw('thanks',1660,30,0,12,true,'0xb7cfff')
   ].join(',')+'[v]';
   // Original sound design: scene-aligned three-note impacts, soft sweep and low ambient bed.
