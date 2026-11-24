@@ -7,6 +7,7 @@ COPY package.json server.js mfa.js admin-core.js auth-mail.js billing-core.js sa
 COPY public ./public
 COPY tests ./tests
 COPY scripts ./scripts
+RUN node --check public/v10.js && node --check public/v11.js && node --check analytics-core.js
 RUN node --test --test-concurrency=2 tests/*.test.js
 RUN mkdir -p /app/data /app/uploads && chown -R node:node /app && chmod 755 /app/scripts/entrypoint.sh
 USER root
