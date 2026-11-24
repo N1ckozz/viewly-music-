@@ -61,3 +61,28 @@ test('V18 owner-only invitations, recipient-only acceptance and actual search',a
 
 import {suggestRanges} from '../clip-assistant.js';
 test('V18 signal suggestions use actual audio and non-overlapping valid ranges',()=>{const rate=100,pcm=Buffer.alloc(45*rate*2);for(let i=0;i<pcm.length/2;i++)pcm.writeInt16LE(i>=15*rate&&i<30*rate?20000:1000,i*2);const ranges=suggestRanges(pcm,45,rate);assert.equal(ranges[0].start,15);assert.equal(ranges[0].end,30);assert.ok(ranges.every(x=>x.end<=45&&x.end-x.start>=5));assert.deepEqual(suggestRanges(Buffer.alloc(10*rate*2),10,rate),[]);});
+
+import {canReadCampaign,guardCampaignPath} from '../campaign-privacy.js';
+test('V18 exclusive campaigns excluded from public discovery, search and path access until acceptance',async()=>{
+ const db=setup();try{
+  db.prepare('INSERT INTO campaign_private VALUES(?)').run(c);
+  const owner={id:a,role:'artist'},clipper={id:b,role:'viewer'},guest=client(db,null),artist=client(db,owner),viewer=client(db,clipper);
+  assert.equal(ecosystemHome(db,null).active.length,0);
+  assert.equal((await guest('search?q=Real')).body.campaigns.length,0);
+  assert.equal((await guest('artist/'+a)).body.campaigns.length,0);
+  assert.equal(canReadCampaign(db,c,owner),true);
+  assert.equal(canReadCampaign(db,c,null),false);
+  for(const p of ['campaigns/'+c,'campaigns/'+c+'/assets','promotions/'+c+'/image/icon','growth/campaigns/'+c])assert.throws(()=>guardCampaignPath(db,'/api/'+p,clipper,fail),e=>e.status===404);
+  await assert.rejects(viewer('rank?campaign='+c),e=>e.status===404);
+  await assert.rejects(viewer('save','POST',{id:c,kind:'campaign',saved:true}),e=>e.status===404);
+  await artist('invite','POST',{campaign_id:c,username:'clipper'});
+  const inv=(await viewer('notifications')).body.invites[0];
+  assert.equal(canReadCampaign(db,c,clipper),false);
+  await viewer('respond','POST',{id:inv.id,state:'accepted'});
+  assert.equal(canReadCampaign(db,c,clipper),true);
+  guardCampaignPath(db,'/api/campaigns/'+c+'/assets',clipper,fail);
+  await viewer('save','POST',{id:c,kind:'campaign',saved:true});
+  assert.equal((await viewer('saved')).body.campaigns.length,1);
+  assert.equal((await guest('search?q=Real')).body.campaigns.length,0);
+ }finally{db.close()}
+});
