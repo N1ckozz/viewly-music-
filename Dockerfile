@@ -3,9 +3,10 @@ FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json server.js mfa.js ./
+COPY package.json server.js mfa.js admin-core.js auth-mail.js ./
 COPY public ./public
 COPY tests ./tests
+COPY scripts ./scripts
 RUN node --test --test-concurrency=2 tests/*.test.js
 RUN mkdir -p /app/data /app/uploads && chown -R node:node /app
 USER node

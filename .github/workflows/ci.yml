@@ -32,5 +32,10 @@ jobs:
           node --check mfa.js
           node --check public/mfa-ui.js
           node --check public/v7.js
+          node --check admin-core.js
+          node --check auth-mail.js
+          node --check public/admin-ui.js
+          node --check public/auth-ui.js
+          node --check scripts/provision-admin.js
       - name: Real backend integration tests
         run: npm test

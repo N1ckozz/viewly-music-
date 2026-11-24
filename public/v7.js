@@ -98,7 +98,7 @@ const tools=[
  {action:'security',icon:'shield',title:'Account security',desc:'Sessions and authenticator'}
 ];
 function openTools(){
- const opts=tools.map(t=>'<button class="v7-tool-item" type="button" data-v7-go="'+esc(t.page||t.action)+'">'+
+ const opts=[...tools,...(S.user?.role==='admin'?[{page:'admin',icon:'shield',title:'Admin control center',desc:'Real platform management'}]:[])].map(t=>'<button class="v7-tool-item" type="button" data-v7-go="'+esc(t.page||t.action)+'">'+
    '<span class="v7-tool-symbol">'+icon(t.icon,20)+'</span>'+
    '<span class="v7-tool-description"><b>'+t.title+'</b><small>'+t.desc+'</small></span>'+icon('arrow',16)+'</button>').join('');
  showOverlay('<div class="v7-tools-modal"><span class="v7-overline">YOUR WORKSPACE</span><h2>Creator tools<span>.</span></h2>'+
@@ -139,7 +139,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet'].includes(place))return;
+ if(!['studio','wallet','admin'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});

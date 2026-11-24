@@ -1,0 +1,32 @@
+/* Viewly V8 — clear high-trust authentication layouts and usable microcopy */
+.auth8-footer{display:flex;flex-direction:column;align-items:flex-start;gap:9px;padding-top:13px;margin-top:10px;border-top:1px solid #b1c4ff2b}
+.auth8-footer p{font-size:11px;line-height:1.6;color:#a8b9d6;margin:0}
+.auth8-link{display:inline-flex;align-items:center;gap:7px;padding:5px 0!important;font:730 12px var(--body)!important;color:#b8cbff!important;
+ background:transparent!important;border:0!important;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.auth8-link:hover{color:#fff!important}
+.auth8-link:focus-visible{outline:2px solid #b5c9ff!important;outline-offset:3px}
+.auth8-show{position:relative;display:inline-flex;margin-top:7px;padding:6px 9px!important;font:660 11px var(--body)!important;
+ background:#adc0ff19!important;border:1px solid #b3c6ff39!important;border-radius:7px!important;color:#d2dfff!important}
+.auth8-show:hover{background:#adbaff30!important}
+.auth8-strength{margin-top:10px}
+#auth8-meter{display:block;width:100%;height:5px;overflow:hidden;border-radius:100px;background:#bbc8fb21}
+#auth8-meter i{display:block;height:100%;width:0;background:#dfad7c;transition:width .23s,background .23s}
+#auth8-meter i[data-level="3"],#auth8-meter i[data-level="4"]{background:linear-gradient(90deg,#7fe2bc,#b0f1d0)}
+#auth8-hint{display:block;color:#b0bbd1;font-size:11px;line-height:1.6;margin-top:7px}
+.auth8-modal h2{font:730 clamp(27px,4vw,36px)/1.1 var(--display)!important;letter-spacing:-.065em;color:#f6f8ff;margin:10px 0}
+.auth8-modal h2 span{color:#9db6ff}
+.auth8-modal>p{font-size:12px;line-height:1.75;color:#a9bad8}
+.auth8-modal form{display:grid;gap:16px;margin:20px 0}
+.auth8-modal .field label{font-size:12px;font-weight:710;color:#d8e5ff}
+.auth8-modal .field input{font-size:13px!important;min-height:44px;border-radius:10px!important;border-color:#b0c6ff53!important}
+.auth8-modal .v6-btn{width:max-content;max-width:100%}
+.auth8-offline{padding:15px;border-radius:11px;background:#deac651b;border:1px solid #e6c08a60;color:#e9cba6;font:550 12px/1.7 var(--body)}
+.auth8-confirm{padding:14px;background:#72d5b321;border:1px solid #8adbb858;border-radius:10px;color:#bbf1d4!important}
+.auth8-verify-notice{border:1px solid #b3c8ff4a;border-radius:13px;padding:14px 17px;background:linear-gradient(110deg,#aebaff1c,#677ed812);margin-bottom:14px}
+.auth8-verify-notice b{font:720 13px var(--body);color:#e4edff}
+.auth8-verify-notice p{font-size:11px;line-height:1.6;color:#aabbd8;margin:7px 0 11px}
+.auth8-verified{display:inline-flex;align-items:center;gap:6px;font:690 11px var(--body);
+ color:#a7e4c8;background:#77cca81b;border:1px solid #93dec353;border-radius:10px;padding:9px 13px;margin-bottom:12px}
+#auth8-status:not(:empty){font-size:12px;line-height:1.6;color:#ffc5ba}
+@media(max-width:700px){.auth8-modal form{margin:14px 0}.auth8-modal .v6-btn{width:100%}.auth8-footer p{font-size:11px}}
+@media(prefers-reduced-motion:reduce){#auth8-meter i{transition:none}}
