@@ -103,6 +103,21 @@ function wizard(){
   '</form></div>';
  showOverlay(form,'large');
 }
+const originalHomeCampaignCard=campaignCard;
+campaignCard=function(c){
+ if(c.pricing_model!=='cpm')return originalHomeCampaignCard(c);
+ const fund=Number(c.is_sandbox?c.sandbox_funded_cents:c.paid_cents)||0;
+ const spent=Number(c.is_sandbox?c.sandbox_spent_cents:c.spent_cents)||0;
+ return '<article class="campaign-card v10-home-cpm"><div class="cover">'+
+  (c.cover_url?'<img loading="lazy" src="'+value(c.cover_url)+'" alt="Artist campaign artwork">':'<div class="fallback">V.</div>')+
+  '<span class="genre-chip">TikTok · CPM</span></div><div class="card-body">'+
+  '<h3 class="card-title">'+value(c.title)+'</h3><div class="card-author">'+value(c.artist_name)+' · '+value(c.release_title)+'</div>'+
+  '<div class="card-meta"><span>'+euro(Math.max(0,fund-spent))+' '+(c.is_sandbox?'test credits':'funding')+' left</span>'+
+  '<strong>'+euro(c.cpm_rate_cents)+' / 1K views</strong></div>'+
+  '<div class="card-footer"><button class="primary tiny" data-action="campaign" data-id="'+value(c.id)+'">See the brief '+symbol('arrow',14)+'</button></div>'+
+  '<small class="v10-card-note">'+(c.is_sandbox?'TEST / €0 FUNDS RECEIVED · NO CASH PAYOUTS':'API views monitored only after account verification')+'</small>'+
+  '</div></article>';
+};
 const formerCampaignModal=campaignModal;
 campaignModal=function(){wizard()};
 function assetElement(a,canManage){
