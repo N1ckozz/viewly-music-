@@ -43,7 +43,8 @@ export function buildQuote(db,c,b,fail,at=new Date().toISOString()){
   }
   lines.push({id:p.id,label:p.label,hours:p.hours,price_cents:p.price_cents});
  }
- const q={campaign_id:c.id,budget_cents:c.budget_cents,fee_cents:c.fee_cents,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
+ const media=db.prepare('SELECT id,sha256 FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY id').all(c.id);
+ const q={campaign_id:c.id,media,budget_cents:c.budget_cents,fee_cents:c.fee_cents,lines,placements,promo_cents:lines.reduce((s,x)=>s+x.price_cents,0),branding:{icon:b.icon_file,background:b.background_file,headline:b.headline}};
  q.total_cents=q.budget_cents+q.fee_cents+q.promo_cents;
  return {...q,quote_hash:digest(q)};
 }
@@ -67,12 +68,13 @@ export async function normalizeBrand(file,kind,UPLOADS,fail){
  try{
   temp=await fsp.mkdtemp(path.join(os.tmpdir(),'viewly-brand-'));
   const input=path.join(temp,'input'),out=path.join(temp,'normalized.jpg');
+  const format={'image/jpeg':'jpeg_pipe','image/png':'png_pipe','image/webp':'webp_pipe'}[file.type];
   await fsp.writeFile(input,file.content);
-  const {stdout}=await exec('ffprobe',['-v','error','-select_streams','v:0','-show_entries','stream=width,height,codec_name','-of','json',input],{timeout:8000,maxBuffer:65536});
+  const {stdout}=await exec('ffprobe',['-v','error','-protocol_whitelist','file,pipe','-f',format,'-select_streams','v:0','-show_entries','stream=width,height,codec_name','-of','json',input],{timeout:8000,maxBuffer:65536});
   const s=JSON.parse(stdout).streams?.[0],w=s?.width,h=s?.height;
   const target=kind==='icon'?[1024,1024]:[1600,900];
   if(!['mjpeg','png','webp'].includes(s?.codec_name)||!w||!h||w>8192||h>8192||w*h>40000000||w<target[0]||h<target[1]||Math.abs(w/h-target[0]/target[1])>.01)throw fail(422,kind==='icon'?'Icon must be square, minimum 1024 × 1024.':'Background must be 16:9, minimum 1600 × 900.');
-  await exec('ffmpeg',['-nostdin','-v','error','-threads','1','-i',input,'-frames:v','1','-vf','scale='+target[0]+':'+target[1],'-map_metadata','-1','-q:v','3','-threads','1','-y',out],{timeout:15000,maxBuffer:65536});
+  await exec('ffmpeg',['-nostdin','-v','error','-protocol_whitelist','file,pipe','-f',format,'-threads','1','-i',input,'-frames:v','1','-vf','scale='+target[0]+':'+target[1],'-map_metadata','-1','-q:v','3','-threads','1','-y',out],{timeout:15000,maxBuffer:65536});
   const name=crypto.randomBytes(20).toString('hex')+'.jpg';
   output=path.join(UPLOADS,name);
   await fsp.copyFile(out,output,fs.constants.COPYFILE_EXCL);
@@ -99,7 +101,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
   }
   const actor=requireCreator(req);if(!owner)throw fail(404,'Campaign not found.');
   if(req.method==='GET'&&!action)return send(res,200,{branding:campaignBrand(db,c.id),selections:JSON.parse(b.selections),status:c.status,order:db.prepare('SELECT quote_json,charged_cents FROM promo_orders WHERE campaign_id=?').get(c.id)||null});
-  if(!['draft','awaiting_payment'].includes(c.status))throw fail(409,'Campaign is already funded or locked.');
+  if(!['draft','awaiting_payment'].includes(c.status)&&!(req.method==='POST'&&action==='checkout'&&c.status==='sandbox_active'))throw fail(409,'Campaign is already funded or locked.');
   if(req.method==='POST'&&action.startsWith('image/')){
    limit(req,'promo-image',12,3600000);
    const file=multipart(await readBody(req,16*1024*1024),req.headers['content-type']||'').find(x=>x.name==='image');
@@ -131,6 +133,11 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
    db.exec('BEGIN IMMEDIATE');
    try{
     const current=lookup(c.id),brand=branding(c.id);
+    if(current.status==='sandbox_active'){
+     const order=db.prepare('SELECT * FROM promo_orders WHERE campaign_id=?').get(c.id);
+     const q=order&&JSON.parse(order.quote_json);
+     if(data.confirm===true&&q?.quote_hash===data.quote_hash){db.exec('COMMIT');return send(res,200,{ok:true,already_active:true,mode:'sandbox',charged_cents:0,quote:q});}
+    }
     if(!['draft','awaiting_payment'].includes(current.status))throw fail(409,'Campaign is already funded.');
     const q=ready(current,brand);
     if(data.confirm!==true||data.quote_hash!==q.quote_hash)throw fail(409,'Quote changed or was not confirmed. Review final checkout again.');
