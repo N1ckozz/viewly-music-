@@ -21,14 +21,14 @@ test('payment safety gate, browser origin controls, upload rights and security h
  assert.match(homepage.headers.get('content-security-policy'),/script-src 'self'/);
  const cross=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json',origin:'https://evil.invalid'},body:'{}'});
  assert.equal(cross.status,403);
- const reg=await fetch(base+'/api/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'security@example.test',username:'security_artist',display_name:'Security Artist',password:'password-long-123',role:'artist'})});
+ const reg=await fetch(base+'/api/register',{method:'POST',headers:{'content-type':'application/json','X-Viewly-Request':'1'},body:JSON.stringify({email:'security@example.test',username:'security_artist',display_name:'Security Artist',password:'password-long-123',role:'artist'})});
  assert.equal(reg.status,201);
  const session=reg.headers.get('set-cookie').split(';')[0];
  const fd=new FormData();fd.set('title','No rights upload');fd.set('genre','Rap');fd.set('video',new Blob(['invalid'],{type:'video/mp4'}),'bad.mp4');
- const noRights=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session},body:fd});
+ const noRights=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session,'X-Viewly-Request':'1'},body:fd});
  assert.equal(noRights.status,422);
- fd.set('rights','on');const invalidVideo=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session},body:fd});
+ fd.set('rights','on');const invalidVideo=await fetch(base+'/api/releases',{method:'POST',headers:{cookie:session,'X-Viewly-Request':'1'},body:fd});
  assert.equal(invalidVideo.status,415);
- const pay=await fetch(base+'/api/payments/stripe/checkout',{method:'POST',headers:{cookie:session,'content-type':'application/json'},body:'{}'});
+ const pay=await fetch(base+'/api/payments/stripe/checkout',{method:'POST',headers:{cookie:session,'content-type':'application/json','X-Viewly-Request':'1'},body:'{}'});
  assert.equal(pay.status,503);
 });
