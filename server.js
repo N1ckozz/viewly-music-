@@ -8,6 +8,7 @@ import {initCampaignSandbox,campaignBalance,sandboxCampaignAllowed,createCampaig
 import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.js';
 import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
 import {startCpmWatchdog} from './cpm-watchdog.js';
+import {createAnalyticsHandler} from './analytics-core.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -276,6 +277,7 @@ const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,j
 const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
 const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
 startCpmWatchdog({db,id,now,fail,broadcast});
+const analyticsHandler=createAnalyticsHandler({db,requireCreator,fail,send});
 async function handle(req,res){
  const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('X-Permitted-Cross-Domain-Policies','none');res.setHeader('Origin-Agent-Cluster','?1');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
@@ -301,6 +303,7 @@ async function handle(req,res){
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
  if(pathname.startsWith('/api/social/'))return socialHandler(req,res,url);
+ if(pathname.startsWith('/api/analytics/'))return analyticsHandler(req,res,url);
  if(pathname==='/api/cpm-submissions/me'||pathname==='/api/campaigns/v10'||/^\/api\/campaigns\/[a-f0-9-]{36}\/(?:v10|assets(?:\/[a-f0-9-]{36})?|pause|resume|cpm-submissions)$/.test(pathname)||/^\/api\/cpm-submissions\/[a-f0-9-]{36}(?:\/(?:review|refresh|settle|appeal))?$/.test(pathname))return creatorCampaignHandler(req,res,url);
  if(pathname.startsWith('/api/auth/'))return mailHandler(req,res,pathname);
  if(pathname.startsWith('/api/billing/'))return billingHandler(req,res,url);
