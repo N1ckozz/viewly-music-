@@ -152,4 +152,43 @@ with sync_playwright() as p:
                 page.screenshot(path=str(out/f'v14-{name}-failure.png'),full_page=True)
                 raise
             finally: ctx.close()
+    if '127.0.0.1' in base:
+        # Test the cinematic independently of the reduced-motion workflow suite.
+        for name,viewport,fallback,skip_intro in [
+            ('cinematic-desktop',{'width':1440,'height':900},False,False),
+            ('cinematic-mobile',{'width':390,'height':844},False,True),
+            ('cinematic-fallback',{'width':390,'height':844},True,True)]:
+            ctx=browser.new_context(viewport=viewport,reduced_motion='no-preference')
+            if fallback:
+                ctx.add_init_script("const get=HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl'?null:get.call(this,type,...args)}")
+            page=ctx.new_page()
+            errors=[]
+            page.on('pageerror',lambda err: errors.append(str(err)))
+            try:
+                page.goto(base,wait_until='domcontentloaded')
+                intro=page.locator('#app-loader.v17-intro')
+                expect(intro).to_be_visible(timeout=5000)
+                expect(intro.locator('[data-intro-skip]')).to_be_visible()
+                expect(page.locator('#app')).to_have_attribute('inert','')
+                expect(intro).to_have_attribute('data-ready','true',timeout=8000)
+                if fallback:
+                    expect(intro).to_have_attribute('data-renderer','css')
+                    expect(intro.locator('.v17-fallback-mark')).to_be_visible()
+                else:
+                    expect(intro).to_have_attribute('data-renderer','webgl',timeout=5000)
+                    expect(intro.locator('canvas')).to_be_visible()
+                    assert page.locator('canvas').first.evaluate('(c)=>c.width>10&&c.height>10')
+                if skip_intro:
+                    intro.locator('[data-intro-skip]').click()
+                else:
+                    expect(intro).to_have_attribute('data-phase','2',timeout=5000)
+                    page.screenshot(path=str(out/f'{name}-intro.png'))
+                expect(page.locator('#app')).to_have_class('v17-reveal',timeout=7000)
+                expect(page.locator('#app')).not_to_have_attribute('inert','')
+                expect(intro).to_have_count(0,timeout=4000)
+                expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible()
+                assert not errors,errors
+                page.screenshot(path=str(out/f'{name}-finished.png'),animations='disabled')
+                print(name+' intro, handoff and cleanup passed',flush=True)
+            finally: ctx.close()
     browser.close()
