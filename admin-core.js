@@ -100,7 +100,8 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   }
   if(path==='/api/admin/payments'&&verb==='GET'){
    const rows=list('SELECT o.id,o.campaign_id,o.provider,o.status,o.amount_cents,o.created_at,c.title AS campaign_title FROM payment_orders o JOIN campaigns c ON c.id=o.campaign_id ORDER BY o.created_at DESC LIMIT 100');
-   return send(res,200,{rows,read_only:true,note:'No manual credit, refunds, fake campaign funding or payout overrides.'});
+   const sandbox_orders=list('SELECT o.id,o.campaign_id,o.user_id,o.quoted_amount_cents,o.charged_cents,o.created_at,c.title AS campaign_title FROM sandbox_campaign_orders o JOIN campaigns c ON c.id=o.campaign_id ORDER BY o.created_at DESC LIMIT 100');
+   return send(res,200,{rows,sandbox_orders,read_only:true,note:'Provider orders are separate from sandbox campaign quotes (charged €0). No manual credits, refunds, fake campaign funding or payout overrides.'});
   }
   if(path==='/api/admin/subscriptions'&&verb==='GET'){
    const rows=list("SELECT s.user_id,u.username,u.email,s.plan_id,s.period,s.status,s.provider,s.period_start_at,s.period_end_at,s.auto_renew,s.updated_at,(SELECT count(*) FROM subscription_events e WHERE e.user_id=s.user_id) AS events_count FROM account_subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.updated_at DESC LIMIT 100");
