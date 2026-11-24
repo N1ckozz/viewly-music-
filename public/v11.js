@@ -246,5 +246,5 @@ document.addEventListener('click',e=>{
  const csv=e.target.closest('[data-v11-csv]');
  if(csv){e.preventDefault();e.stopImmediatePropagation();exportCSV();}
 },true);
-window.ViewlyAnalytics={open(id){if(id)A.campaignId=id;S.page='analytics';A.error='';render();},reload(){A.error='';A.portfolio=null;A.detail=null;load()}};
+window.ViewlyAnalytics={open(id){if(id)A.campaignId=id;S.page='analytics';A.error='';render();},reload(){A.error='';A.portfolio=null;A.detail=null;return load()}};
 })();
