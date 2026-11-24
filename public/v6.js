@@ -44,6 +44,14 @@ function sorted(){
 }
 function campaignResults(){
  const data=sorted();
+ if(M.scope==='explore'&&!S.campaigns.length&&!M.query&&M.platform==='All'){
+  return '<section class="v6-empty-market"><div class="v6-empty-art" aria-hidden="true"><div class="v6-empty-disc"><span>V.</span></div><span class="v6-empty-art-label">ORIGINAL MUSIC / REAL REWARDS</span></div>'+
+   '<div class="v6-empty-copy"><span class="v6-overline"><i></i> 0 FUNDED CAMPAIGNS LIVE</span><h2>The next wave starts here.</h2>'+
+   '<p>There are no funded campaigns to join yet. Artists can publish original music and prepare a campaign now; rewards activate only after verified funding and payouts are available.</p>'+
+   '<div class="v6-empty-actions"><button type="button" class="v6-btn v6-btn-primary" data-action="'+(isCreator()?'upload':S.user?'role':'register')+'">'+(isCreator()?'Upload original music':S.user?'Enable artist tools':'Get started')+' '+icon('arrow',15)+'</button>'+
+   '<button type="button" class="v6-btn v6-btn-quiet" data-page="releases">'+icon('releases',15)+' Explore music</button></div>'+
+   '<div class="v6-launch-steps"><span><b>01</b> Publish</span><span><b>02</b> Create brief</span><span><b>03</b> Verified funding</span></div></div></section>';
+ }
  if(!data.length)return '<div class="v6-zero"><div class="v6-zero-icon">'+icon('search',27)+'</div><h3>'+(M.scope==='mine'?'No campaigns in this view':'No campaigns match these filters')+'</h3>'+
   '<p>'+(M.scope==='mine'?'Create an original promotion brief from your artist workspace.':'Try another platform, reward sort or search term. Only verified active campaigns appear in Explore.')+'</p>'+
   (M.scope==='mine'?'<button class="v6-btn v6-btn-primary" data-action="'+(S.user?(isCreator()?'create-campaign':'role'):'register')+'">Create campaign '+icon('arrow',15)+'</button>':
@@ -61,7 +69,7 @@ function toolbar(){
    (M.query?'<button type="button" class="v6-clear" data-v6-reset aria-label="Clear campaign search">×</button>':'')+'</div>'+
    '<label class="v6-sort-label"><span>Sort</span><select id="v6-campaign-sort" aria-label="Sort campaigns">'+[
     ['recent','Newest'],['reward','Highest reward'],['remaining','Most available funding'],['budget','Largest budget']
-   ].map(([k,v])=>'<option value="'+k+'" '+(M.sort===k?'selected':'')+'>'+v+'</option>').join('')+'</select>'+icon('chevron-down',14)+'</label></div>'+
+   ].map(([k,v])=>'<option value="'+k+'" '+(M.sort===k?'selected':'')+'>'+v+'</option>').join('')+'</select>'+icon('arrow',14)+'</label></div>'+
    '<div class="v6-filters" role="group" aria-label="Campaign platform filters">'+opts.map(p=>'<button type="button" class="v6-filter '+(M.platform===p?'is-active':'')+'" data-v6-platform="'+esc(p)+'" aria-pressed="'+(M.platform===p?'true':'false')+'">'+esc(p)+'</button>').join('')+
    '<span class="v6-result-count" id="v6-result-count">'+sorted().length+' campaigns</span></div>';
 }
@@ -82,7 +90,7 @@ clipsPage=function(){
  const s=previousClips();
  if(!S.user)return s;
  const action='<div class="v6-clip-summary"><div><span class="v6-overline">REAL CAMPAIGN ACTIVITY</span><h3>Track every clip submission.</h3><p>Review the status of links you actually submitted to an artist campaign.</p></div>'+
- '<button type="button" class="v6-btn v6-btn-quiet" data-v6-submissions>'+icon('list',17)+' My submissions '+icon('arrow',14)+'</button></div>';
+ '<button type="button" class="v6-btn v6-btn-quiet" data-v6-submissions>'+icon('campaigns',17)+' My submissions '+icon('arrow',14)+'</button></div>';
  return action+s;
 };
 const previousWallet=walletPage;
@@ -90,7 +98,7 @@ walletPage=function(){
  const s=previousWallet();
  if(!S.user)return s;
  return s+'<div class="v6-clip-summary v6-wallet-activity"><div><span class="v6-overline">REWARD ACTIVITY</span><h3>Submission tracker</h3><p>Pending, approved and rejected posts are recorded separately from spendable balance.</p></div>'+
-  '<button type="button" class="v6-btn v6-btn-quiet" data-v6-submissions>'+icon('list',16)+' View submissions '+icon('arrow',14)+'</button></div>';
+  '<button type="button" class="v6-btn v6-btn-quiet" data-v6-submissions>'+icon('campaigns',16)+' View submissions '+icon('arrow',14)+'</button></div>';
 };
 function renderSubmissions(data){
  const list=data?.submissions||[];
