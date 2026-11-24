@@ -61,7 +61,7 @@ test('analytics renders DB-backed portfolio, charts, allocations, rankings and h
  await ctx.window.ViewlyAnalytics.reload();
  const html=ctx.content();
  assert.match(html,/Recorded test music campaign/);
- assert.match(html,/Creator intelligence/);
+ assert.match(html,/Creator <em>intelligence/);
  assert.match(html,/€130\.00/);
  assert.match(html,/€70\.00/);
  assert.match(html,/€0 paid/);
