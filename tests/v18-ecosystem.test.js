@@ -5,7 +5,7 @@ import {initEcosystem,ecosystemHome,ranking,createEcosystemHandler} from '../eco
 const a='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',b='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',r='11111111-1111-1111-1111-111111111111',c='22222222-2222-2222-2222-222222222222';
 const now=()=>new Date().toISOString();
 function setup(){
- const db=new DatabaseSync(':memory:');db.exec("CREATE TABLE users(id TEXT PRIMARY KEY,username,display_name,role,bio,status); CREATE TABLE releases(id TEXT PRIMARY KEY,owner_id,title,genre,created_at,cover_name,file_name,visibility); CREATE TABLE release_likes(release_id,user_id); CREATE TABLE release_views(release_id,user_id); CREATE TABLE release_comments(release_id,user_id,created_at); CREATE TABLE artist_follows(artist_id,follower_id); CREATE TABLE campaigns(id TEXT PRIMARY KEY,owner_id,title,release_id,created_at,launched_at,status,pricing_model,cpm_rate_cents,reward_cents,paid_cents,spent_cents,sandbox_funded_cents,sandbox_spent_cents,moderation_status); CREATE TABLE campaign_branding(campaign_id,icon_file,background_file); CREATE TABLE cpm_submissions(submission_id,campaign_id,clipper_id,reported_views,review_status,post_access,risk_flag,last_checked_at,reviewed_at);");
+ const db=new DatabaseSync(':memory:');db.exec("CREATE TABLE users(id TEXT PRIMARY KEY,username,display_name,role,bio,status); CREATE TABLE releases(id TEXT PRIMARY KEY,owner_id,title,genre,created_at,cover_name,file_name,visibility); CREATE TABLE release_likes(release_id,user_id); CREATE TABLE release_views(release_id,user_id,created_at); CREATE TABLE release_comments(release_id,user_id,created_at); CREATE TABLE artist_follows(artist_id,follower_id); CREATE TABLE campaigns(id TEXT PRIMARY KEY,owner_id,title,release_id,created_at,launched_at,status,pricing_model,cpm_rate_cents,reward_cents,paid_cents,spent_cents,sandbox_funded_cents,sandbox_spent_cents,moderation_status); CREATE TABLE campaign_branding(campaign_id,icon_file,background_file); CREATE TABLE cpm_submissions(submission_id,campaign_id,clipper_id,reported_views,review_status,post_access,risk_flag,last_checked_at,reviewed_at);");
  db.prepare("INSERT INTO users VALUES(?,?,?,?,?,?)").run(a,'artist','Artist','artist','','active');
  db.prepare("INSERT INTO users VALUES(?,?,?,?,?,?)").run(b,'clipper','Clipper','viewer','','active');
  db.prepare("INSERT INTO releases VALUES(?,?,?,?,?,?,?,?)").run(r,a,'Actual track','Rap',now(),null,'file.mp4','public');
@@ -58,3 +58,6 @@ test('V18 owner-only invitations, recipient-only acceptance and actual search',a
  await assert.rejects(viewer('respond','POST',{id:inv.id,state:'declined'}),e=>e.status===404);
  }finally{db.close()}
 });
+
+import {suggestRanges} from '../clip-assistant.js';
+test('V18 signal suggestions use actual audio and non-overlapping valid ranges',()=>{const rate=100,pcm=Buffer.alloc(45*rate*2);for(let i=0;i<pcm.length/2;i++)pcm.writeInt16LE(i>=15*rate&&i<30*rate?20000:1000,i*2);const ranges=suggestRanges(pcm,45,rate);assert.equal(ranges[0].start,15);assert.equal(ranges[0].end,30);assert.ok(ranges.every(x=>x.end<=45&&x.end-x.start>=5));assert.deepEqual(suggestRanges(Buffer.alloc(10*rate*2),10,rate),[]);});
