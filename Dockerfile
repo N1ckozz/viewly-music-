@@ -7,7 +7,7 @@ COPY package.json server.js mfa.js admin-core.js auth-mail.js billing-core.js sa
 COPY public ./public
 COPY tests ./tests
 COPY scripts ./scripts
-RUN node --check public/v10.js && node --check public/v11.js && node --check analytics-core.js && node --check workspace-core.js && node --check public/v13.js && node --check promotions-core.js && node --check public/v14.js && node --check growth-core.js && node --check public/v15.js
+RUN node --check public/v10.js && node --check public/v11.js && node --check analytics-core.js && node --check workspace-core.js && node --check public/v13.js && node --check promotions-core.js && node --check public/v14.js && node --check growth-core.js && node --check public/v15.js && node --check public/v17-intro.js
 RUN node --test --test-concurrency=2 tests/*.test.js && python3 scripts/backup.py self-test
 RUN mkdir -p /app/data /app/uploads && chown -R node:node /app && chmod 755 /app/scripts/entrypoint.sh
 USER root
