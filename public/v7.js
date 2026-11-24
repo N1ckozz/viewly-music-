@@ -27,7 +27,7 @@ function genreWidgets(compact=false){
  const items=GENRES.map((g,i)=>{
   const selected=active===g.key;
   const count=tally.get(g.key)||0;
-  return '<button type="button" class="v7-genre-card v7-tone-'+g.tone+(selected?' is-selected':'')+'" data-v7-category="'+esc(g.key)+'" aria-label="'+esc(g.label)+', '+count+' releases" aria-pressed="'+selected+'">'+
+  return '<button type="button" class="v7-genre-card v7-tone-'+g.tone+(selected?' is-selected':'')+'" data-v7-category="'+esc(g.key)+'" aria-label="'+esc(g.label)+', '+count+' '+(count===1?'release':'releases')+'" aria-pressed="'+selected+'">'+
    '<span class="v7-genre-no">0'+(i+1)+'</span>'+
    '<span class="v7-genre-visual v7-shape-'+g.shape+'" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>'+
    '<span class="v7-genre-content"><b>'+esc(g.label)+'</b><small>'+esc(g.sub)+'</small></span>'+
