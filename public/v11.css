@@ -293,3 +293,11 @@
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
  .v-app-shell>.v-topbar,.v-app-shell>.v-sidebar{background:#151d2e!important}
 }
+
+@media(min-width:701px){
+ .v-app-shell .v-topbar .v-logo-word{display:flex!important}
+ .v-app-shell>.v-sidebar .v7-side-icon{display:grid}
+}
+@media(max-width:700px){
+ .v-app-shell .v-topbar .v-logo-word{display:none!important}
+}
