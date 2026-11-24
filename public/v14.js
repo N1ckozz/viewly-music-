@@ -40,6 +40,8 @@ function wizardHTML(releases,info,catalog){
  return '<div class="v14-wizard"><span class="v14-eyebrow">VIEWLY / CAMPAIGN LAUNCHPAD</span><h2>'+(locked?'Continue campaign':'Build your campaign')+'</h2><p>Complete every step. Checkout comes last.</p><ol class="v14-progress">'+stepNames.map((n,i)=>'<li><span>'+String(i+1).padStart(2,'0')+'</span>'+n+'</li>').join('')+'</ol><form id="v14-form">'+parts.map((body,i)=>'<section class="v14-step" '+(i?'hidden':'')+'><h3>'+stepNames[i]+'</h3>'+body+'</section>').join('')+'<div class="v14-footer"><span id="v14-estimate"></span><div><button type="button" class="v10-button v10-outlined" data-v14-back>Back</button><button type="button" class="v10-button v10-primary" data-v14-next>Continue</button></div></div><p id="v14-state" role="status"></p></form></div>';
 }
 async function wizard(cid){
+ if(V.saving)return;
+ clearUrls();
  if(!S.user)return authModal('register');if(!isCreator())return roleModal();
  const releases=(S.releases||[]).filter(r=>r.owner_id===S.user.id);
  if(!releases.length)return showOverlay('<h2>Publish your original music first.</h2><button class="v10-button v10-primary" data-action="upload">Upload music</button>');
@@ -74,6 +76,8 @@ async function save(f){
   for(const k of ['rate_eur_per_1000','max_per_clip_eur','budget_eur','min_views','tracking_days'])body[k]=Number(f.elements[k].value);
   body.rights_confirmed=f.elements.rights_confirmed.checked;
   state('Creating private campaign draft…');const x=await api('/campaigns/v14','POST',body);draft.cid=x.campaign.id;draft.title=body.title;
+  for(const x of f.querySelectorAll('.v14-step:nth-child(-n+2) input,.v14-step:nth-child(-n+2) textarea,.v14-step:nth-child(-n+2) select'))x.disabled=true;
+  f.elements.rights_confirmed.disabled=true;
  }
  for(const kind of ['icon','background']){
   const file=f.elements[kind].files[0];if(file&&!draft.uploaded.has(file)){state('Validating and uploading '+kind+'…');const fd=new FormData();fd.append('image',file,file.name);const x=await api(url(draft.cid,'/image/'+kind),'POST',fd);draft.branding=x.branding;draft.uploaded.add(file);}
