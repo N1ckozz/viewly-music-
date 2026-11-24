@@ -6,7 +6,7 @@ from contextlib import closing
 
 PREFIX = 'viewly-staging/v1/'
 KEEP = 7
-MEDIA = [('releases','file_name'),('releases','cover_name'),('clips','file_name'),('campaign_assets','storage_name')]
+MEDIA = [('releases','file_name'),('releases','cover_name'),('clips','file_name'),('campaign_assets','storage_name'),('campaign_branding','icon_file'),('campaign_branding','background_file')]
 def digest(p):
     with open(p,'rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
 def check_db(db):
