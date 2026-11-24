@@ -58,7 +58,7 @@ test('live discovery cards label per-view rates rather than guaranteed cash rewa
 test('TikTok identity connection uses real account status; no mock linked account',()=>{
  const {ctx,S}=app();
  S.page='connections';const body=ctx.content();
- assert.match(body,/Link TikTok for verified clip ownership/i);
+ assert.match(body,/TikTok account that posted it has granted access/i);
  assert.match(body,/Not connected/);
  assert.match(body,/Official API credentials\/approval required/);
  assert.match(body,/NOT VERIFIED OWNERSHIP/);
