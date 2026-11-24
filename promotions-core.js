@@ -106,8 +106,8 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
    const kind=action.split('/')[1],column=kind==='icon'?'icon_file':'background_file';
    const name=await normalizeBrand(file,kind,UPLOADS,fail);
    try{const current=lookup(c.id);if(!['draft','awaiting_payment'].includes(current.status))throw fail(409,'Campaign was funded during upload.');
-    const old=branding(c.id)[column];db.prepare('UPDATE campaign_branding SET '+column+'=? WHERE campaign_id=?').run(name,c.id);
-    if(old)await fsp.unlink(path.join(UPLOADS,old)).catch(()=>{});
+    db.prepare('UPDATE campaign_branding SET '+column+'=? WHERE campaign_id=?').run(name,c.id);
+    // Retain replaced image temporarily; a concurrent SQLite backup may still reference it.
    }catch(e){await fsp.unlink(path.join(UPLOADS,name)).catch(()=>{});throw e;}
    return send(res,201,{branding:campaignBrand(db,c.id)});
   }
