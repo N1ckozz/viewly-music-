@@ -75,6 +75,7 @@ export function createGrowthHandler({db,requireUser,fail,json,send,now,limit}){
    if(!inviter||inviter.user_id===user.id)throw fail(422,'Invalid invitation or own code.');
    const out=tx(()=>{
     if(db.prepare('SELECT 1 FROM referrals WHERE invitee_id=?').get(user.id))throw fail(409,'Invitation already claimed.');
+    if(db.prepare('SELECT 1 FROM referrals WHERE invitee_id=? AND inviter_id=?').get(inviter.user_id,user.id))throw fail(409,'Reciprocal invitations are not eligible.');
     if(db.prepare('SELECT count(*) AS n FROM referrals WHERE inviter_id=?').get(inviter.user_id).n>=25)throw fail(409,'Invitation capacity reached.');
     db.prepare('INSERT INTO referrals(invitee_id,inviter_id,created_at) VALUES(?,?,?)').run(user.id,inviter.user_id,now());return {ok:true};
    });return send(res,201,out);
