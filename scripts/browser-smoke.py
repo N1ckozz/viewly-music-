@@ -5,7 +5,7 @@ base=os.environ['VIEWLY_BROWSER_URL'].rstrip('/')
 out=pathlib.Path(os.environ.get('VIEWLY_SCREENSHOT_DIR','browser-results'))
 out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
-    browser=p.chromium.launch(headless=True)
+    browser=p.chromium.launch(headless=True,args=['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
     for width,height,name in [(1440,900,'desktop'),(390,844,'mobile')]:
         context=browser.new_context(viewport={'width':width,'height':height},reduced_motion='reduce',is_mobile=name=='mobile',has_touch=name=='mobile')
         page=context.new_page()
@@ -164,6 +164,7 @@ with sync_playwright() as p:
             page=ctx.new_page()
             errors=[]
             page.on('pageerror',lambda err: errors.append(str(err)))
+            page.on('console',lambda msg: print(msg.text,flush=True) if 'VIEWLY cinematic fallback' in msg.text else None)
             try:
                 page.goto(base,wait_until='domcontentloaded')
                 intro=page.locator('#app-loader.v17-intro')
