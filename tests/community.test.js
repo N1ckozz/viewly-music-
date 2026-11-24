@@ -15,7 +15,7 @@ test('real follows, activity and moderation reports (no invented events)',{skip:
  t.after(()=>{child.kill('SIGTERM');fs.rmSync(tmp,{recursive:true,force:true})});
  let ready=false;for(let i=0;i<80;i++){await new Promise(r=>setTimeout(r,100));try{if((await fetch(base+'/api/health')).ok){ready=true;break}}catch{}}assert.ok(ready,'server became healthy');
  const get=async(endpoint,method='GET',data,cookie='')=>{
-  const h={};if(cookie)h.Cookie=cookie;let body;
+  const h={};if(method!=='GET')h['X-Viewly-Request']='1';if(cookie)h.Cookie=cookie;let body;
   if(data instanceof FormData)body=data;
   else if(data!==undefined){h['Content-Type']='application/json';body=JSON.stringify(data)}
   const r=await fetch(base+'/api'+endpoint,{method,headers:h,body});
