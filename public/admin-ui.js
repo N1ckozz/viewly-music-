@@ -137,9 +137,9 @@ const row=(...cols)=>'<tr>'+cols.map(v=>'<td>'+v+'</td>').join('')+'</tr>';
 function users(data){
  return table(['Account','Role','Status','Releases','Controls'],(data.rows||[]).map(u=>
   row('<b>@'+esc(u.username)+'</b><small>'+esc(u.email)+'</small>',
-   tag(u.role),tag(u.status),String(u.releases_count||0),
+   tag(u.role)+(u.profile_reviewed?'<small>Profile reviewed</small>':''),tag(u.status),String(u.releases_count||0),
    u.role==='admin'?'<span class="adm-locked">'+icon('shield',14)+' Managed offline</span>':
-   '<div class="adm-actions">'+btn('Edit role','edit-user',u.id)+
+   '<div class="adm-actions">'+btn('Edit role','edit-user',u.id)+btn(u.profile_reviewed?'Revoke profile review':'Mark profile reviewed','profile-review',u.id,'quiet',u.profile_reviewed?'revoke':'approve')+
    btn(u.status==='active'?'Suspend':'Reactivate','user-status',u.id,u.status==='active'?'danger':'good',u.status==='active'?'suspended':'active')+'</div>'
   )), 'No matching accounts');
 }
@@ -320,6 +320,7 @@ document.addEventListener('click',async e=>{
  e.preventDefault();e.stopImmediatePropagation();
  const action=node.dataset.admAction,id=node.dataset.admId,extra=node.dataset.admExtra;
  if(action==='refresh'){A.data=null;load();return}
+ if(action==='profile-review'){const note=window.prompt('Record evidence for this manual profile review (15+ characters). This is not KYC or payout verification.','');if(note===null)return;if(note.trim().length<15)return toast('An evidence note is required.',true);try{await api('/admin/profile-review/'+id,'POST',{enabled:extra==='approve',note:note.trim()});toast('Profile review updated.');A.data=null;load();}catch(err){errorToast(err);}return;}
  if(action==='cpm-hold'||action==='cpm-clear'){
   const decision=action==='cpm-hold'?'hold':'clear';
   const note=window.prompt(decision==='hold'?'Explain the evidence for holding this CPM submission (15+ characters):':'Explain the recent official evidence that justifies lifting the hold (15+ characters):','');
