@@ -100,3 +100,7 @@ A new checkout atomically stores an owner-only campaign snapshot alongside the o
 ### V17.2 social launch video
 
 Automatically renders a private, on-demand 12-second 1080x1920 H.264/AAC promotional MP4 using normalized campaign art and original synthesized audio. The export excludes order IDs, fees, private briefs and receipts, includes a permanent sandbox label, and is available only to the owner of an active confirmed test campaign. One concurrent render and four export requests per hour per existing limiter identity; temporary files are deleted. Native Web Share is used where file sharing is supported; other devices download the MP4 and can copy the campaign deep link. Instagram Stories posting and link stickers are user-controlled, not guaranteed browser destinations. Removed skip/pause/mute/replay controls from the campaign film itself; the platform intro is unaffected. No real payment or public social account posting integration is enabled.
+
+### V17.3 brand opening
+
+The startup intro now uses a single beveled metallic V under neutral studio lighting. The V moves to the left as IEWLY is revealed beside it, followed by the tagline and the original top-to-bottom dashboard reveal. No rings, particles, equalizer, HUD, external animation assets or new audio. The 3.6-second minimum, reduced-motion/data-saving path, skip and SVG fallback preserve startup accessibility and recovery. Campaign film, social export, data and payments are unchanged.
