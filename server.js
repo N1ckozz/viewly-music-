@@ -503,6 +503,7 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  const campMatch=pathname.match(/^\/api\/campaigns\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(campMatch){const cid=campMatch[1],action=campMatch[2],camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(cid);if(!camp)throw fail(404,'Campaign not found.');const u=sessionUser(req);if(!action&&req.method==='GET'){const ownerOrAdmin=u?.id===camp.owner_id||u?.role==='admin';const publicEntry=((camp.status==='active'&&camp.paid_cents>camp.spent_cents)||(sandboxCampaignAllowed(camp)&&camp.sandbox_funded_cents>camp.sandbox_spent_cents))&&camp.moderation_status==='visible'&&db.prepare("SELECT 1 FROM users u JOIN releases r ON r.owner_id=u.id WHERE u.id=? AND u.status='active' AND r.id=? AND r.visibility='public'").get(camp.owner_id,camp.release_id);if(!ownerOrAdmin&&!publicEntry)throw fail(404,'Campaign not found.');return send(res,200,{campaign:campaignRows('WHERE c.id=?',[cid])[0]});}
  if(action==='submit'&&req.method==='POST'){
+  if(camp.pricing_model==='cpm')throw fail(403,'CPM campaigns require the official connected TikTok verification flow. Use the verified CPM submission endpoint.');
   const sandbox=sandboxCampaignAllowed(camp);
   if(!sandbox&&!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign submissions are disabled until verified payouts are operational.');
   const actor=requireUser(req);
@@ -533,7 +534,8 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  }
  const subMatch=pathname.match(/^\/api\/submissions\/([a-f0-9-]{36})\/review$/);
  if(subMatch&&req.method==='POST'){
-  const preview=db.prepare('SELECT s.status,c.owner_id FROM submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.id=?').get(subMatch[1]);
+  const preview=db.prepare('SELECT s.status,c.owner_id,c.pricing_model FROM submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.id=?').get(subMatch[1]);
+  if(preview?.pricing_model==='cpm')throw fail(403,'CPM campaigns cannot be approved through per-post rewards. Use the verified CPM artist review.');
   if(preview?.status==='sandbox_pending'){
    const actor=requireUser(req),body=await json(req);
    return reviewSandboxSubmission({db,fail,send,now,id,broadcast},req,res,actor,subMatch[1],body.status);
