@@ -77,7 +77,8 @@ profilePage=function(){
  const security='<div class="v-settings-panel"><h2>Sign-in & security</h2>'+row('Session','Active','This browser is signed in')+row('Password recovery','Not available','Account recovery is not yet launched')+'<div class="v-settings-actions"><button class="v-button is-subtle" data-v-security="sessions">View active sessions</button><button class="v-button is-subtle" data-v-security="revoke">Sign out of other devices</button><button class="v-button is-subtle" data-action="logout">Sign out here</button></div></div>';
  const privacy='<div class="v-settings-panel"><h2>Privacy & data</h2><p>Download a portable JSON copy of your account details, published metadata, clips, campaign drafts, activity and ledger. Original media files are downloaded separately.</p><button class="v-button is-primary" data-v-security="export">'+ico('arrow',15)+' Download my data</button><div class="v-integrity">'+ico('shield',17)+'<div><b>Staging account</b><p>A production-grade storage and backup system is not configured yet. Do not store irreplaceable uploads.</p></div></div></div>';
  const payments='<div class="v-settings-panel"><h2>Payments</h2><p>Creator funding and payouts are not enabled. No payment details will be requested until a verified provider is configured.</p><button class="v-button is-subtle" disabled>Payment methods unavailable</button></div>';
- return title('MY ACCOUNT','Settings','Manage identity, privacy and account access.')+'<div class="v-settings-wrap"><nav class="v-settings-nav" aria-label="Settings">'+[['account','Account'],['security','Security'],['privacy','Privacy & data'],['payments','Payments']].map(([id,name])=>'<button class="'+(Y.settings===id?'is-current':'')+'" data-v-tab="settings:'+id+'">'+name+'</button>').join('')+'</nav><div class="v-settings-content">'+({account,security,privacy,payments}[Y.settings])+'</div></div>';
+ const moderation='<div class="v-settings-panel"><h2>Content moderation</h2><p>Review genuine user reports, make a documented decision, and keep an audit trail. This console is available to administrators only.</p><button type="button" class="v-button is-subtle" data-v-moderation="load">Load pending reports</button><div class="v-admin-reports" id="v-admin-reports" aria-live="polite"></div></div>';
+ return title('MY ACCOUNT','Settings','Manage identity, privacy and account access.')+'<div class="v-settings-wrap"><nav class="v-settings-nav" aria-label="Settings">'+[['account','Account'],['security','Security'],['privacy','Privacy & data'],['payments','Payments'],...(S.user.role==='admin'?[['moderation','Moderation']]:[])].map(([id,name])=>'<button class="'+(Y.settings===id?'is-current':'')+'" data-v-tab="settings:'+id+'">'+name+'</button>').join('')+'</nav><div class="v-settings-content">'+({account,security,privacy,payments,moderation}[Y.settings])+'</div></div>';
 };
 const originalDetail=campaignDetail;
 campaignDetail=function(id){
@@ -91,6 +92,36 @@ campaignDetail=function(id){
 };
 const originalRender=render;
 render=function(){originalRender();const h=document.querySelector('#main-content');if(h)h.setAttribute('tabindex','-1');document.title='Viewly Music — '+(({discover:'Discover',campaigns:'Campaigns',releases:'Music',studio:'Artist studio',clips:'Clip editor',wallet:'Rewards',profile:'Settings'})[S.page]||'Music');};
+
+
+async function viewModerationReports(){
+ const root=document.querySelector('#v-admin-reports');if(!root)return;
+ root.textContent='Loading reports…';
+ try{
+  const result=await api('/admin/reports');
+  const reports=result.reports||[];
+  root.innerHTML=reports.length?reports.map(r=>'<article class="v-report-entry"><div><small>'+esc(r.reason)+' · '+esc(r.review_status)+'</small><b>'+esc(r.release_title)+'</b><p>'+esc(r.details||'No description provided')+'</p></div>'+(r.review_status==='pending'?'<button class="v-button is-subtle" data-v-moderation="review" data-report-id="'+esc(r.id)+'" data-release-title="'+esc(r.release_title)+'">Review</button>':'')+'</article>').join(''):'<div class="v-no-data">No reports to review.</div>';
+ }catch(err){root.textContent=err.message||'Unable to load reports.'}
+}
+document.addEventListener('click',e=>{
+ const btn=e.target.closest('[data-v-moderation]');if(!btn)return;
+ e.preventDefault();e.stopPropagation();
+ if(btn.dataset.vModeration==='load'){viewModerationReports();return}
+ if(btn.dataset.vModeration==='review'){
+  showOverlay('<div class="v-overline">ADMIN / CONTENT MODERATION</div><h2>Review a report</h2><p class="intro">This decision is written to an audit log. Hiding a release also blocks its direct video URL.</p><form id="v-review-report" data-id="'+esc(btn.dataset.reportId)+'"><div class="field"><label>DECISION</label><select name="decision" required><option value="hide">Hide release</option><option value="dismiss">Dismiss report</option></select></div><div class="field"><label>DOCUMENTED REASON</label><textarea name="reason" required minlength="10" maxlength="500" placeholder="Explain the evidence and grounds for this action"></textarea></div><button class="v-button is-primary" type="submit">Record decision</button></form>','medium');
+ }
+},true);
+document.addEventListener('submit',async e=>{
+ if(e.target.id!=='v-review-report')return;
+ e.preventDefault();e.stopPropagation();
+ const btn=e.target.querySelector('[type=submit]');if(btn)btn.disabled=true;
+ const fd=new FormData(e.target);
+ try{
+  await api('/admin/reports/'+e.target.dataset.id+'/review','POST',{decision:fd.get('decision'),reason:fd.get('reason')});
+  closeOverlay();toast('Moderation decision recorded.');viewModerationReports();await refresh(true);
+ }catch(err){toast(err.message||'Review failed.',true)}
+ finally{if(btn)btn.disabled=false}
+},true);
 
 document.addEventListener('click',async e=>{
  const button=e.target.closest('[data-v-security]');if(!button)return;
