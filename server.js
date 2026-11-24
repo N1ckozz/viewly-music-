@@ -38,6 +38,32 @@ CREATE INDEX IF NOT EXISTS idx_submissions_campaign ON submissions(campaign_id,c
 db.exec(`CREATE TABLE IF NOT EXISTS artist_follows(follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,artist_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,PRIMARY KEY(follower_id,artist_id));
 CREATE INDEX IF NOT EXISTS idx_artist_follows_artist ON artist_follows(artist_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS content_reports(id TEXT PRIMARY KEY,release_id TEXT NOT NULL REFERENCES releases(id),reporter_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(release_id,reporter_id));`);
+
+/* Production storage gate. A path alone is not persistence: require a mounted filesystem.
+   The staging site intentionally stays operational without a volume, but can never claim readiness. */
+
+if(!db.prepare('PRAGMA table_info(releases)').all().some(x=>x.name==='moderation_status'))db.exec("ALTER TABLE releases ADD COLUMN moderation_status TEXT NOT NULL DEFAULT 'visible'");
+if(!db.prepare('PRAGMA table_info(content_reports)').all().some(x=>x.name==='review_status'))db.exec("ALTER TABLE content_reports ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'");
+db.exec(`CREATE TABLE IF NOT EXISTS moderation_actions(id TEXT PRIMARY KEY,report_id TEXT REFERENCES content_reports(id),release_id TEXT NOT NULL REFERENCES releases(id),admin_id TEXT NOT NULL REFERENCES users(id),action TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);`);
+const PERSISTENCE_ROOT=path.resolve(process.env.VIEWLY_PERSISTENCE_MOUNT||'/persistent');
+function persistenceMounted(){
+ try{
+  const mounts=fs.readFileSync('/proc/self/mountinfo','utf8').split('\n');
+  const root=PERSISTENCE_ROOT.replaceAll('\\040',' ');
+  return mounts.some(line=>{
+   const fields=line.split(' '),mountPoint=fields[4]?.replaceAll('\\040',' ');
+   return mountPoint===root || (mountPoint && root.startsWith(mountPoint+'/') && mountPoint!=='/');
+  });
+ }catch{return false;}
+}
+function storageStatus(){
+ const mounted=persistenceMounted(),insideRoot=(p)=>p===PERSISTENCE_ROOT||p.startsWith(PERSISTENCE_ROOT+path.sep);
+ return {durable:mounted&&insideRoot(DATA)&&insideRoot(UPLOADS),mounted,database_path_inside_mount:insideRoot(DATA),uploads_path_inside_mount:insideRoot(UPLOADS)};
+}
+if(process.env.VIEWLY_REQUIRE_PERSISTENCE==='true'&&!storageStatus().durable){
+ throw new Error('Production startup blocked: attach a real volume at VIEWLY_PERSISTENCE_MOUNT and place VIEWLY_DATA_DIR and VIEWLY_UPLOAD_DIR below it.');
+}
+
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -84,7 +110,7 @@ function isRealFile(p,isVideo){if(!p||!p.content?.length)throw fail(400,'Choose 
  if(p.type==='image/jpeg'&&b.subarray(0,2).toString('hex')!=='ffd8')throw fail(415,'Invalid JPEG file.');
  return p.type;}
 function publicRelease(r,u){return {...r,video_url:`/media/${r.file_name}`,cover_url:r.cover_name?`/media/${r.cover_name}`:null,liked:!!(u&&db.prepare('SELECT 1 FROM release_likes WHERE release_id=? AND user_id=?').get(r.id,u.id))};}
-function getRelease(id,u){const r=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE r.id=?`).get(id);return r?publicRelease(r,u):null;}
+function getRelease(id,u){const r=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE r.id=? AND (r.moderation_status='visible' OR r.owner_id=? OR ?=1)`).get(id,u?.id||'',u?.role==='admin'?1:0);return r?publicRelease(r,u):null;}
 function publicCampaign(r){return {...r,remaining_cents:Math.max(0,r.paid_cents-r.spent_cents),eligible_spots:Math.floor(Math.max(0,r.paid_cents-r.spent_cents)/r.reward_cents)};}
 function campaignRows(where='',args=[]){return db.prepare(`SELECT c.*,u.username,u.display_name AS artist_name,r.title AS release_title,r.cover_name,r.file_name FROM campaigns c JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id ${where} ORDER BY c.created_at DESC LIMIT 100`).all(...args).map(r=>({...publicCampaign(r),cover_url:r.cover_name?`/media/${r.cover_name}`:null,video_url:`/media/${r.file_name}`}));}
 function stripSensitive(user){if(!user)return null;return {id:user.id,email:user.email,username:user.username,display_name:user.display_name,role:user.role,bio:user.bio,created_at:user.created_at};}
@@ -130,7 +156,7 @@ async function handle(req,res){
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
  if(pathname==='/auth/google'&&req.method==='GET')return googleStart(req,res);
  if(pathname==='/auth/google/callback'&&req.method==='GET')return googleCallback(req,res,url);
- if(pathname.startsWith('/media/')&&req.method==='GET'){const name=pathname.slice(7);if(!/^[a-f0-9]{40}\.(mp4|webm|mov|jpg|png|webp)$/.test(name))throw fail(404,'File not found.');return serveFile(req,res,path.join(UPLOADS,name));}
+ if(pathname.startsWith('/media/')&&req.method==='GET'){const name=pathname.slice(7);if(!/^[a-f0-9]{40}\.(mp4|webm|mov|jpg|png|webp)$/.test(name))throw fail(404,'File not found.');const denied=db.prepare("SELECT 1 FROM releases WHERE moderation_status='hidden' AND (file_name=? OR cover_name=?) UNION SELECT 1 FROM clips c JOIN releases r ON r.id=c.release_id WHERE r.moderation_status='hidden' AND c.file_name=? LIMIT 1").get(name,name,name);if(denied)throw fail(404,'Media unavailable.');return serveFile(req,res,path.join(UPLOADS,name));}
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',stripe_ready:STRIPE_READY,google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
@@ -165,10 +191,80 @@ async function handle(req,res){
   const items=[...comments,...follows,...releases].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,30);
   return send(res,200,{items});
  }
+
+ const reportReview=pathname.match(/^\/api\/admin\/reports\/([a-f0-9-]{36})\/review$/);
+ if(reportReview&&req.method==='POST'){
+  const admin=requireUser(req);if(admin.role!=='admin')throw fail(403,'Admin access required.');
+  const b=await json(req),decision=clean(b.decision,20),reason=clean(b.reason,500);
+  if(!['hide','dismiss'].includes(decision)||reason.length<10)throw fail(422,'A valid decision and a reason of 10+ characters are required.');
+  db.exec('BEGIN IMMEDIATE');try{
+   const report=db.prepare('SELECT * FROM content_reports WHERE id=?').get(reportReview[1]);
+   if(!report)throw fail(404,'Report not found.');
+   if(report.review_status!=='pending')throw fail(409,'Already reviewed.');
+   if(decision==='hide')db.prepare("UPDATE releases SET moderation_status='hidden' WHERE id=?").run(report.release_id);
+   db.prepare('UPDATE content_reports SET review_status=? WHERE id=?').run(decision==='hide'?'actioned':'dismissed',report.id);
+   db.prepare('INSERT INTO moderation_actions VALUES (?,?,?,?,?,?,?)').run(id(),report.id,report.release_id,admin.id,decision,reason,now());
+   db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
+  broadcast('moderation');return send(res,200,{ok:true,decision});
+ }
+ const restoreMatch=pathname.match(/^\/api\/admin\/releases\/([a-f0-9-]{36})\/restore$/);
+ if(restoreMatch&&req.method==='POST'){
+  const admin=requireUser(req);if(admin.role!=='admin')throw fail(403,'Admin access required.');
+  const b=await json(req),reason=clean(b.reason,500);
+  if(reason.length<10)throw fail(422,'A documented reason is required.');
+  db.exec('BEGIN IMMEDIATE');try{
+   const release=db.prepare('SELECT id FROM releases WHERE id=?').get(restoreMatch[1]);
+   if(!release)throw fail(404,'Release not found.');
+   db.prepare("UPDATE releases SET moderation_status='visible' WHERE id=?").run(release.id);
+   db.prepare('INSERT INTO moderation_actions VALUES (?,?,?,?,?,?,?)').run(id(),null,release.id,admin.id,'restore',reason,now());
+   db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
+  broadcast('moderation');return send(res,200,{ok:true});
+ }
+ if(pathname==='/api/admin/moderation-log'&&req.method==='GET'){
+  const admin=requireUser(req);if(admin.role!=='admin')throw fail(403,'Admin access required.');
+  return send(res,200,{actions:db.prepare('SELECT * FROM moderation_actions ORDER BY created_at DESC LIMIT 100').all()});
+ }
  if(pathname==='/api/admin/reports'&&req.method==='GET'){
   const user=requireUser(req);if(user.role!=='admin')throw fail(403,'Administrator access required.');
-  const reports=db.prepare('SELECT x.id,x.reason,x.details,x.created_at,x.release_id,r.title AS release_title,u.username AS reporter FROM content_reports x JOIN releases r ON r.id=x.release_id JOIN users u ON u.id=x.reporter_id ORDER BY x.created_at DESC LIMIT 100').all();
+  const reports=db.prepare('SELECT x.id,x.reason,x.details,x.review_status,x.created_at,x.release_id,r.title AS release_title,u.username AS reporter FROM content_reports x JOIN releases r ON r.id=x.release_id JOIN users u ON u.id=x.reporter_id ORDER BY x.created_at DESC LIMIT 100').all();
   return send(res,200,{reports});
+ }
+
+ if(pathname==='/api/account/export'&&req.method==='GET'){
+  const actor=requireUser(req);
+  limit(req,'data-export',4,3600000);
+  const profile=db.prepare('SELECT id,email,username,display_name,role,bio,created_at FROM users WHERE id=?').get(actor.id);
+  const releases=db.prepare('SELECT id,title,description,genre,file_name,cover_name,created_at FROM releases WHERE owner_id=? ORDER BY created_at').all(actor.id);
+  const comments=db.prepare('SELECT id,release_id,body,created_at FROM release_comments WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const likes=db.prepare('SELECT release_id FROM release_likes WHERE user_id=?').all(actor.id);
+  const follows=db.prepare('SELECT artist_id,created_at FROM artist_follows WHERE follower_id=?').all(actor.id);
+  const campaigns=db.prepare('SELECT id,release_id,title,brief,platform,reward_cents,budget_cents,fee_cents,status,created_at FROM campaigns WHERE owner_id=? ORDER BY created_at').all(actor.id);
+  const clips=db.prepare('SELECT id,release_id,file_name,start_sec,end_sec,created_at FROM clips WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const submissions=db.prepare('SELECT id,campaign_id,clip_id,post_url,status,created_at,reviewed_at FROM submissions WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const ledger=db.prepare('SELECT id,campaign_id,submission_id,type,amount_cents,created_at FROM wallet_ledger WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const reports=db.prepare('SELECT id,release_id,reason,details,created_at FROM content_reports WHERE reporter_id=? ORDER BY created_at').all(actor.id);
+  res.setHeader('Content-Disposition','attachment; filename="viewly-account-export.json"');
+  return send(res,200,{exported_at:now(),format_version:1,account:profile,releases,comments,likes,follows,campaigns,clips,submissions,ledger,reports,note:'This archive contains account metadata, not the original large media files. Download your media separately.'});
+ }
+ if(pathname==='/api/account/sessions'&&req.method==='GET'){
+  const actor=requireUser(req);
+  return send(res,200,{active_session_count:db.prepare('SELECT count(*) AS n FROM sessions WHERE user_id=? AND expires_at>?').get(actor.id,Date.now()).n});
+ }
+ if(pathname==='/api/account/revoke-other-sessions'&&req.method==='POST'){
+  const actor=requireUser(req);
+  limit(req,'security',5,3600000);
+  const b=await json(req),userRow=db.prepare('SELECT password_hash FROM users WHERE id=?').get(actor.id);
+  if(!userRow.password_hash)throw fail(409,'Re-authentication for connected sign-in providers is not configured. Use the provider to secure your account.');
+  if(!validPassword(String(b.password||''),userRow.password_hash))throw fail(403,'Current password does not match.');
+  const token=cookieValue(req,'viewly_session');
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(actor.id,sha(token));
+  return send(res,200,{ok:true,remaining_sessions:1});
+ }
+ if(pathname==='/api/launch/readiness'&&req.method==='GET'){
+  const storage=storageStatus();
+  return send(res,storage.durable?200:503,{status:storage.durable?'storage_ready':'blocked',storage,paid_campaigns_enabled:PAYMENT_LAUNCH_ENABLED,payouts_operational:PAYOUT_PROVIDER_IMPLEMENTED,external_social_verification:false,commercial_launch_ready:false,reason:'Commercial operations require verified payouts, social metrics, legal review and moderation, not just persistent storage.'});
  }
  if(req.method==='GET'&&pathname==='/api/me'){const u=sessionUser(req);return send(res,200,{user:u,stats:statsFor(u)});}
  if(pathname==='/api/register'&&req.method==='POST'){
@@ -179,9 +275,9 @@ async function handle(req,res){
  if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));return send(res,200,{ok:true});}
  if(pathname==='/api/role'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);if(!['artist','label'].includes(b.role))throw fail(422,'Invalid account role.');if(u.role==='admin')throw fail(403,'Administrator role cannot be modified here.');db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role,u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
  if(pathname==='/api/profile'&&req.method==='PATCH'){const u=requireUser(req);const b=await json(req);db.prepare('UPDATE users SET display_name=?,bio=? WHERE id=?').run(clean(b.display_name,80)||u.display_name,clean(b.bio,500),u.id);return send(res,200,{user:statements.getUser.get(u.id)});}
- if(pathname==='/api/releases'&&req.method==='GET'){const q=clean(url.searchParams.get('q')||'',120);const genre=clean(url.searchParams.get('genre')||'',40);const rows=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE (?='' OR r.title LIKE '%'||?||'%' OR u.display_name LIKE '%'||?||'%') AND (?='' OR r.genre=?) ORDER BY r.created_at DESC LIMIT 80`).all(q,q,q,genre,genre);const u=sessionUser(req);return send(res,200,{releases:rows.map(r=>publicRelease(r,u))});}
+ if(pathname==='/api/releases'&&req.method==='GET'){const q=clean(url.searchParams.get('q')||'',120);const genre=clean(url.searchParams.get('genre')||'',40);const rows=db.prepare(`SELECT r.id,r.owner_id,r.title,r.description,r.genre,r.file_name,r.cover_name,r.created_at,u.display_name AS artist_name,u.username AS artist_username,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_comments c WHERE c.release_id=r.id) AS comments FROM releases r JOIN users u ON u.id=r.owner_id WHERE r.moderation_status='visible' AND (?='' OR r.title LIKE '%'||?||'%' OR u.display_name LIKE '%'||?||'%') AND (?='' OR r.genre=?) ORDER BY r.created_at DESC LIMIT 80`).all(q,q,q,genre,genre);const u=sessionUser(req);return send(res,200,{releases:rows.map(r=>publicRelease(r,u))});}
  if(pathname==='/api/releases'&&req.method==='POST'){
-  limit(req,'upload',12,3600000);const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await saveMedia(get('cover'),false);else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
+  limit(req,'upload',12,3600000);const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await saveMedia(get('cover'),false);else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases(id,owner_id,title,description,genre,file_name,cover_name,created_at) VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
  }
  const releaseMatch=pathname.match(/^\/api\/releases\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(releaseMatch){const rid=releaseMatch[1],action=releaseMatch[2],u=sessionUser(req);const r=getRelease(rid,u);if(!r)throw fail(404,'Release not found.');if(!action&&req.method==='GET')return send(res,200,{release:r});
@@ -191,7 +287,7 @@ async function handle(req,res){
    if(!['copyright','harassment','misleading','other'].includes(reason))throw fail(422,'Select a valid report reason.');
    const prior=db.prepare('SELECT id FROM content_reports WHERE release_id=? AND reporter_id=?').get(rid,actor.id);
    if(prior)return send(res,200,{ok:true,status:'already_submitted'});
-   db.prepare('INSERT INTO content_reports VALUES (?,?,?,?,?,?)').run(id(),rid,actor.id,reason,details,now());
+   db.prepare('INSERT INTO content_reports(id,release_id,reporter_id,reason,details,created_at) VALUES (?,?,?,?,?,?)').run(id(),rid,actor.id,reason,details,now());
    broadcast('content-report');
    return send(res,201,{ok:true,status:'recorded',note:'Queued for administrator review. No automatic takedown claimed.'});
   }
@@ -199,11 +295,11 @@ async function handle(req,res){
   if(action==='comments'&&req.method==='POST'){const actor=requireUser(req);const b=await json(req);const body=clean(b.body,600);if(body.length<2)throw fail(422,'Write a comment.');const cid=id();db.prepare('INSERT INTO release_comments VALUES (?,?,?,?,?)').run(cid,rid,actor.id,body,now());broadcast('comment');return send(res,201,{ok:true,id:cid});}
   if(action==='like'&&req.method==='POST'){const actor=requireUser(req);if(db.prepare('SELECT 1 FROM release_likes WHERE release_id=? AND user_id=?').get(rid,actor.id))db.prepare('DELETE FROM release_likes WHERE release_id=? AND user_id=?').run(rid,actor.id);else db.prepare('INSERT INTO release_likes VALUES (?,?)').run(rid,actor.id);broadcast('release-stats');return send(res,200,{release:getRelease(rid,actor)});}
   if(action==='view'&&req.method==='POST'){const actor=requireUser(req);db.prepare('INSERT OR IGNORE INTO release_views VALUES (?,?,?)').run(rid,actor.id,now());broadcast('release-stats');return send(res,200,{release:getRelease(rid,actor)});}
-  if(action==='clip'&&req.method==='POST'){const actor=requireUser(req);limit(req,'clip',15,3600000);const b=await json(req);const start=Number(b.start),end=Number(b.end);if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start||end-start<5||end-start>90)throw fail(422,'Choose a 5–90 second clip range.');const format=b.format==='original'?'original':'vertical';const duration=await verifyUploadedVideo(r.file_name);if(end>duration+0.05)throw fail(422,'The clip range extends beyond the source video.');const output=await generateClip(r.file_name,start,end,format);const cid=id();db.prepare('INSERT INTO clips VALUES (?,?,?,?,?,?,?)').run(cid,rid,actor.id,output,start,end,now());broadcast('clip');return send(res,201,{clip:{id:cid,video_url:'/media/'+output,start,end}});}
+  if(action==='clip'&&req.method==='POST'){const actor=requireUser(req);if(db.prepare('SELECT moderation_status FROM releases WHERE id=?').get(rid)?.moderation_status==='hidden')throw fail(403,'This release is unavailable.');limit(req,'clip',15,3600000);const b=await json(req);const start=Number(b.start),end=Number(b.end);if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start||end-start<5||end-start>90)throw fail(422,'Choose a 5–90 second clip range.');const format=b.format==='original'?'original':'vertical';const duration=await verifyUploadedVideo(r.file_name);if(end>duration+0.05)throw fail(422,'The clip range extends beyond the source video.');const output=await generateClip(r.file_name,start,end,format);const cid=id();db.prepare('INSERT INTO clips VALUES (?,?,?,?,?,?,?)').run(cid,rid,actor.id,output,start,end,now());broadcast('clip');return send(res,201,{clip:{id:cid,video_url:'/media/'+output,start,end}});}
   if(!action&&req.method==='DELETE'){const actor=requireUser(req);if(r.owner_id!==actor.id)throw fail(403,'Only the artist can delete a release.');const campaigns=db.prepare('SELECT count(*) AS n FROM campaigns WHERE release_id=?').get(rid).n;if(campaigns)throw fail(409,'Release has linked campaigns. Delete or complete those first.');db.prepare('DELETE FROM release_comments WHERE release_id=?').run(rid);db.prepare('DELETE FROM release_likes WHERE release_id=?').run(rid);db.prepare('DELETE FROM release_views WHERE release_id=?').run(rid);db.prepare('DELETE FROM clips WHERE release_id=?').run(rid);db.prepare('DELETE FROM releases WHERE id=?').run(rid);broadcast('release');return send(res,200,{ok:true});}
  }
  if(pathname==='/api/clips'&&req.method==='GET'){const actor=requireUser(req);const clips=db.prepare('SELECT c.*,r.title AS release_title FROM clips c JOIN releases r ON r.id=c.release_id WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 100').all(actor.id);return send(res,200,{clips:clips.map(c=>({...c,video_url:'/media/'+c.file_name}))});}
- if(pathname==='/api/campaigns'&&req.method==='GET'){const mine=url.searchParams.get('mine')==='1';if(mine){const u=requireUser(req);return send(res,200,{campaigns:campaignRows('WHERE c.owner_id=?',[u.id])});}return send(res,200,{campaigns:campaignRows("WHERE c.status='active' AND c.paid_cents>c.spent_cents")});}
+ if(pathname==='/api/campaigns'&&req.method==='GET'){const mine=url.searchParams.get('mine')==='1';if(mine){const u=requireUser(req);return send(res,200,{campaigns:campaignRows('WHERE c.owner_id=?',[u.id])});}return send(res,200,{campaigns:campaignRows("WHERE c.status='active' AND c.paid_cents>c.spent_cents AND r.moderation_status='visible'")});}
  if(pathname==='/api/campaigns'&&req.method==='POST'){const u=requireCreator(req);const b=await json(req);const release=db.prepare('SELECT * FROM releases WHERE id=? AND owner_id=?').get(b.release_id,u.id);if(!release)throw fail(403,'Choose a release you own.');const reward=money(b.reward_eur),budget=money(b.budget_eur),title=clean(b.title,100),brief=clean(b.brief,1200),platform=clean(b.platform,30);if(!title||brief.length<15)throw fail(422,'Add a title and clear clipping brief.');if(!Number.isInteger(reward)||reward<50||reward>1000)throw fail(422,'Clip reward must be €0.50–€10.00.');if(!Number.isInteger(budget)||budget<1000||budget>10000000)throw fail(422,'Budget must be €10–€100,000.');if(!['Any','TikTok','Instagram Reels','YouTube Shorts'].includes(platform))throw fail(422,'Choose a supported destination.');if(budget<reward)throw fail(422,'Campaign budget is too low.');const fee=Math.round(budget*0.05),cid=id();db.prepare('INSERT INTO campaigns(id,owner_id,release_id,title,brief,platform,reward_cents,budget_cents,fee_cents,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(cid,u.id,release.id,title,brief,platform,reward,budget,fee,now());broadcast('campaign');return send(res,201,{campaign:campaignRows('WHERE c.id=?',[cid])[0]});}
  if(pathname==='/api/payments/stripe/checkout'&&req.method==='POST')return createStripeCheckout(req,res,requireCreator(req));
  const campMatch=pathname.match(/^\/api\/campaigns\/([a-f0-9-]{36})(?:\/(\w+))?$/);
