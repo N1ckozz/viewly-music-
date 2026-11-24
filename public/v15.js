@@ -18,6 +18,8 @@ function welcome(){
  const s=slides[G.step];
  return '<section class="g15-welcome" aria-label="Welcome to VIEWLY"><div class="g15-welcome-head"><span>VIEWLY / GET STARTED</span><button type="button" data-g15-dismiss>Skip introduction</button></div><div class="g15-welcome-grid">'+scene(s)+'<div class="g15-welcome-copy"><small>'+s.eyebrow+'</small><h2>'+s.title+'</h2><p>'+s.body+'</p><div class="g15-controls"><div class="g15-dots">'+slides.map((x,i)=>'<button type="button" data-g15-step="'+i+'" aria-label="Introduction '+(i+1)+'" aria-pressed="'+(i===G.step)+'"></button>').join('')+'</div><button type="button" class="v10-button v10-outlined" data-g15-next>'+(G.step===slides.length-1?'Get started':'Next')+' '+ico('arrow',14)+'</button></div></div></div></section>';
 }
+function pendingCode(){try{return sessionStorage.getItem('viewly.referral.pending')}catch{return null}}
+function inviteNotice(){return S.user&&pendingCode()?'<section class="g15-panel"><h2>Friend invitation</h2><p>Accept this invitation to link your new account and become eligible for fee discounts.</p><button class="v10-button v10-primary" data-g15-accept>Accept invitation</button> <button class="v10-button v10-outlined" data-g15-decline>Decline</button></section>':'';}
 function invitePanel(){
  const a=G.info;
  if(!S.user)return '';
@@ -33,14 +35,12 @@ async function load(force=false){
  const uid=S.user.id;if(G.busy||(!force&&G.account===uid&&Date.now()-G.loaded<60000))return;
  G.busy=true;G.failed=false;if(G.account!==uid){G.info=null;G.account=uid;}
  try{
-  let pending;try{pending=sessionStorage.getItem('viewly.referral.pending')}catch{}
-  if(pending){try{await api('/growth/claim','POST',{code:pending});toast('Invitation linked. Verify your email to qualify.');}catch(err){toast(err.message,true);}finally{try{sessionStorage.removeItem('viewly.referral.pending')}catch{}}}
   const answer=await api('/growth/me');
   if(S.user?.id!==uid)return;G.info=answer;
  }catch{G.failed=true;}finally{G.loaded=Date.now();G.busy=false;if(S.user?.id===uid&&['discover','profile'].includes(S.page))render();}
 }
-const oldDiscover=discover;discover=function(){return (welcomeVisible()?welcome():'')+oldDiscover();};
-const oldProfile=profilePage;profilePage=function(){return oldProfile()+invitePanel();};
+const oldDiscover=discover;discover=function(){return inviteNotice()+(welcomeVisible()?welcome():'')+oldDiscover();};
+const oldProfile=profilePage;profilePage=function(){return oldProfile()+inviteNotice()+invitePanel();};
 const oldRender=render;render=function(){oldRender();void load();};
 const oldCard=campaignCard;campaignCard=function(c){
  const funded=c.is_sandbox?c.sandbox_funded_cents:c.paid_cents;
@@ -49,8 +49,9 @@ const oldCard=campaignCard;campaignCard=function(c){
 };
 async function dismiss(){safeSet(key(),'1');if(S.user){try{await api('/growth/welcome','POST',{});if(G.info)G.info.onboarding=15;}catch{}}render();}
 document.addEventListener('click',async ev=>{
- const t=ev.target.closest('[data-g15-dismiss],[data-g15-step],[data-g15-next],[data-g15-copy],[data-g15-replay],[data-g15-reload],[data-g15-join]');
+ const t=ev.target.closest('[data-g15-dismiss],[data-g15-step],[data-g15-next],[data-g15-copy],[data-g15-replay],[data-g15-reload],[data-g15-join],[data-g15-accept],[data-g15-decline]');
  if(!t)return;ev.preventDefault();ev.stopImmediatePropagation();
+ if(t.hasAttribute('data-g15-accept')||t.hasAttribute('data-g15-decline')){t.disabled=true;try{if(t.hasAttribute('data-g15-accept')){await api('/growth/claim','POST',{code:pendingCode()});toast('Invitation linked. Verify your email to qualify.');}sessionStorage.removeItem('viewly.referral.pending');G.loaded=0;render();}catch(err){errorToast(err);t.disabled=false;}return;}
  if(t.hasAttribute('data-g15-dismiss'))return void dismiss();
  if(t.hasAttribute('data-g15-step')){G.step=Number(t.dataset.g15Step);render();return;}
  if(t.hasAttribute('data-g15-next')){if(G.step===slides.length-1)return void dismiss();G.step++;render();return;}
