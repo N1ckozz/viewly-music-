@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
+import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -40,12 +41,15 @@ CREATE INDEX IF NOT EXISTS idx_submissions_campaign ON submissions(campaign_id,c
 db.exec(`CREATE TABLE IF NOT EXISTS artist_follows(follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,artist_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,PRIMARY KEY(follower_id,artist_id));
 CREATE INDEX IF NOT EXISTS idx_artist_follows_artist ON artist_follows(artist_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS content_reports(id TEXT PRIMARY KEY,release_id TEXT NOT NULL REFERENCES releases(id),reporter_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(release_id,reporter_id));`);
+db.exec("CREATE TABLE IF NOT EXISTS mfa_methods(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,seed_cipher TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,last_step INTEGER NOT NULL DEFAULT -1,created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS mfa_recovery(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,code_hash TEXT NOT NULL,PRIMARY KEY(user_id,code_hash)); CREATE TABLE IF NOT EXISTS mfa_tickets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0);");
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
 const GOOGLE_SECRET=process.env.GOOGLE_CLIENT_SECRET||'';
 const STRIPE_KEY=process.env.STRIPE_SECRET_KEY||'';
 const STRIPE_WEBHOOK_SECRET=process.env.STRIPE_WEBHOOK_SECRET||'';
+const MFA_MASTER_KEY=process.env.VIEWLY_MFA_MASTER_KEY||'';
+const MFA_AVAILABLE=validMfaKey(MFA_MASTER_KEY);
 // Default-deny real-money features until all launch prerequisites are approved.
 const PAYOUT_PROVIDER_IMPLEMENTED=false; // Must be changed by an audited, genuine provider integration, NEVER by environment toggles alone.
 const PAYMENT_LAUNCH_ENABLED=PAYOUT_PROVIDER_IMPLEMENTED && process.env.VIEWLY_PAID_MARKETPLACE_ENABLED==='true' && process.env.VIEWLY_PAYOUTS_OPERATIONAL==='true' && process.env.VIEWLY_LEGAL_REVIEW_COMPLETE==='true' && APP_URL.startsWith('https://');
@@ -95,7 +99,7 @@ async function validPassword(password,stored){
 }
 function cookieValue(req,name){const cookie=req.headers.cookie||'';const m=cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]+)'));if(!m)return null;try{return decodeURIComponent(m[1])}catch{return null}}
 function sessionUser(req){const token=cookieValue(req,'viewly_session');if(!token)return null;const row=db.prepare('SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?').get(sha(token),Date.now());return row?statements.getUser.get(row.user_id):null;}
-function cookie(name,value,maxAge){const sameSite=name==='viewly_session'?'Strict':'Lax';return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
+function cookie(name,value,maxAge){const sameSite=name==='viewly_oauth_state'?'Lax':'Strict';return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${APP_URL.startsWith('https://')?'; Secure':''}`;}
 function createSession(res,userId){const token=crypto.randomBytes(32).toString('base64url');const expires=Date.now()+SESSION_DAYS*86400*1000;db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(sha(token),userId,expires,Date.now());const existing=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(Array.isArray(existing)?existing:existing?[existing]:[]),cookie('viewly_session',token,SESSION_DAYS*86400)]);}
 function send(res,status,data,extra={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extra});res.end(JSON.stringify(data));}
 function error(res,status,msg){send(res,status,{error:msg});}
@@ -137,6 +141,7 @@ setInterval(()=>{
  db.prepare('DELETE FROM auth_throttle WHERE reset_at<?').run(t);
  db.prepare('DELETE FROM sessions WHERE expires_at<?').run(t);
  db.prepare('DELETE FROM oauth_states WHERE expires_at<?').run(t);
+ db.prepare('DELETE FROM mfa_tickets WHERE expires_at<?').run(t);
 },60000).unref();
 function limit(req,key,cap=25,windowMs=60000){
  const ip=req.socket.remoteAddress||'unknown',k=ip+':'+key;
