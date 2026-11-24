@@ -191,3 +191,15 @@
 
 .v10-card-note{display:block;margin-top:10px;padding-top:9px;border-top:1px solid #a3baff26;color:#a2cdbd;font:660 9px/1.5 var(--mono);letter-spacing:.025em}
 .v10-home-cpm{border-color:#a3cbba60!important}
+
+/* Campaign editor needs enough room to show the media gallery and review workflow. */
+#overlay .modal.large{
+ width:min(100%,1120px)!important;max-width:1120px!important;
+ max-height:calc(100dvh - 34px)!important;overflow-y:auto!important;
+ padding:clamp(16px,2.8vw,33px)!important;
+}
+#overlay .modal.large .modal-close{position:sticky;float:right;top:0;z-index:9}
+@media(max-width:700px){
+ #overlay .modal.large{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 12px)!important;
+ border-radius:15px!important;padding:14px!important}
+}
