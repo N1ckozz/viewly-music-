@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates gosu \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json server.js mfa.js admin-core.js auth-mail.js billing-core.js sandbox-campaigns.js ./
+COPY package.json server.js mfa.js admin-core.js auth-mail.js billing-core.js sandbox-campaigns.js social-oauth.js creator-campaigns.js cpm-watchdog.js ./
 COPY public ./public
 COPY tests ./tests
 COPY scripts ./scripts

@@ -108,6 +108,26 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
    const recent=list("SELECT e.id,e.user_id,u.username,e.action,e.plan_id,e.period,e.quoted_price_cents,e.charged_cents,e.provider,e.created_at FROM subscription_events e JOIN users u ON u.id=e.user_id ORDER BY e.created_at DESC LIMIT 40");
    return send(res,200,{rows,recent,read_only:true,note:'Sandbox subscription entitlements, not real payments. No manual credits or ledger mutation allowed.'});
   }
+  if(path==='/api/admin/cpm'&&verb==='GET'){
+   const rows=list("SELECT c.submission_id,c.campaign_id,c.clipper_id,c.tiktok_video_id,c.post_url,c.review_status,c.reported_views,c.highest_views,c.accrued_cents,c.settled_cents,c.post_access,c.risk_flag,c.last_checked_at,c.submitted_at,c.review_reason,c.appeal_reason,u.username AS clipper_name,camp.title AS campaign_title FROM cpm_submissions c JOIN users u ON u.id=c.clipper_id JOIN campaigns camp ON camp.id=c.campaign_id ORDER BY CASE WHEN c.risk_flag<>'' OR c.review_status='disputed' OR c.post_access<>'visible' THEN 0 ELSE 1 END,c.submitted_at DESC LIMIT 150");
+   return send(res,200,{rows,note:'Provider metrics are API-reported, not independently certified. All balances here are sandbox-only and non-withdrawable.'});
+  }
+  const cmp=path.match(/^\/api\/admin\/cpm\/([a-f0-9-]{36})\/risk$/);
+  if(cmp&&verb==='POST'){
+   const row=db.prepare('SELECT * FROM cpm_submissions WHERE submission_id=?').get(cmp[1]);
+   if(!row)throw fail(404,'CPM review not found.');
+   const body=await json(req),decision=String(body.decision||''),note=short(body.note,700);
+   if(!['hold','clear'].includes(decision)||note.length<15)throw fail(422,'Select hold or clear with an evidence-based note of at least 15 characters.');
+   if(decision==='clear'&&(row.post_access!=='visible'||!row.last_checked_at||Date.now()-Date.parse(row.last_checked_at)>2*3600000))
+    throw fail(409,'A visible post and a recent official TikTok check are required before clearing a hold.');
+   transaction(()=>{
+    db.prepare('UPDATE cpm_submissions SET risk_flag=? WHERE submission_id=?').run(decision==='hold'?'HUMAN_REVIEW_HOLD':'',row.submission_id);
+    db.prepare('INSERT INTO campaign_review_audit VALUES(?,?,?,?,?,?,?)').run(id(),row.campaign_id,row.submission_id,admin.id,
+     'admin.cpm.'+decision,note,now());
+    log(admin,'cpm.risk.'+decision,'cpm_submission',row.submission_id,{risk_flag:row.risk_flag},{risk_flag:decision==='hold'?'HUMAN_REVIEW_HOLD':'',reason:note});
+   });
+   broadcast('cpm-admin-review');return send(res,200,{ok:true,decision,credited_cents:0,note:'Risk review recorded; official views, test accrual and real money were not altered.'});
+  }
   if(path==='/api/admin/audit'&&verb==='GET')return send(res,200,{rows:audit(150)});
   if(path==='/api/admin/settings'){
    if(verb==='GET')return send(res,200,{settings:siteSettings(db)});

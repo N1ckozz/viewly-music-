@@ -5,6 +5,9 @@ import {initAdmin,siteSettings,createAdminHandler} from './admin-core.js';
 import {initializeAuthMail,createMailHandler} from './auth-mail.js';
 import {initSubscriptions,createBillingHandler,assertQuota} from './billing-core.js';
 import {initCampaignSandbox,campaignBalance,sandboxCampaignAllowed,createCampaignSandboxHandler,reviewSandboxSubmission} from './sandbox-campaigns.js';
+import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.js';
+import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
+import {startCpmWatchdog} from './cpm-watchdog.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -50,6 +53,8 @@ initAdmin(db);
 initializeAuthMail(db);
 initSubscriptions(db);
 initCampaignSandbox(db);
+initSocial(db);
+initCreatorCampaigns(db);
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -82,7 +87,7 @@ const MAX_JSON=64*1024,MAX_UPLOAD=80*1024*1024;
 let uploadsInProgress=0,clipJobsInProgress=0;
 const MAX_CONCURRENT_UPLOADS=1,MAX_CONCURRENT_CLIPS=2;
 const mimeExt={'video/mp4':'.mp4','video/webm':'.webm','video/quicktime':'.mov','image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'};
-const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.ico':'image/x-icon','.woff2':'font/woff2'};
+const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.mp3':'audio/mpeg','.wav':'audio/wav','.pdf':'application/pdf','.ico':'image/x-icon','.woff2':'font/woff2'};
 const statements={
   getUser:db.prepare('SELECT id,email,username,display_name,role,bio,created_at,status,email_verified FROM users WHERE id=?'),
   byEmail:db.prepare('SELECT * FROM users WHERE email=?'),
@@ -268,11 +273,15 @@ const adminHandler=createAdminHandler({db,requireUser,fail,json,send,now,id,broa
 const mailHandler=createMailHandler({db,requireUser,fail,send,json,limit,limitAccount,hashPassword,now,sha});
 const billingHandler=createBillingHandler({db,requireUser,fail,json,send,now,id,limit,broadcast});
 const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,json,send,now,id,limit,broadcast});
+const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
+const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
+startCpmWatchdog({db,id,now,fail,broadcast});
 async function handle(req,res){
  const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('X-Permitted-Cross-Domain-Policies','none');res.setHeader('Origin-Agent-Cluster','?1');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
  if(pathname==='/auth/google'&&req.method==='GET')return googleStart(req,res);
  if(pathname==='/auth/google/callback'&&req.method==='GET')return googleCallback(req,res,url);
+ if(pathname.startsWith('/connect/tiktok')||pathname.startsWith('/connect/spotify'))return socialHandler(req,res,url);
  if(pathname.startsWith('/media/')&&req.method==='GET'){
   const name=pathname.slice(7);
   if(!/^[a-f0-9]{40}\.(mp4|webm|mov|jpg|png|webp)$/.test(name))throw fail(404,'File not found.');
@@ -291,11 +300,13 @@ async function handle(req,res){
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
+ if(pathname.startsWith('/api/social/'))return socialHandler(req,res,url);
+ if(pathname==='/api/cpm-submissions/me'||pathname==='/api/campaigns/v10'||/^\/api\/campaigns\/[a-f0-9-]{36}\/(?:v10|assets(?:\/[a-f0-9-]{36})?|pause|resume|cpm-submissions)$/.test(pathname)||/^\/api\/cpm-submissions\/[a-f0-9-]{36}(?:\/(?:review|refresh|settle|appeal))?$/.test(pathname))return creatorCampaignHandler(req,res,url);
  if(pathname.startsWith('/api/auth/'))return mailHandler(req,res,pathname);
  if(pathname.startsWith('/api/billing/'))return billingHandler(req,res,url);
  if(pathname==='/api/sandbox/rewards'||/^\/api\/campaigns\/[a-f0-9-]{36}\/sandbox-fund$/.test(pathname))return sandboxCampaignHandler(req,res,pathname);
  if(pathname.startsWith('/api/admin/'))return adminHandler(req,res,url);
- if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,billing_sandbox_enabled:process.env.VIEWLY_BILLING_MODE==='sandbox'&&process.env.VIEWLY_BILLING_SANDBOX_ALLOWED==='true',google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
+ if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,billing_sandbox_enabled:process.env.VIEWLY_BILLING_MODE==='sandbox'&&process.env.VIEWLY_BILLING_SANDBOX_ALLOWED==='true',google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,tiktok_connection_ready:socialAvailability().tiktok,spotify_connection_ready:socialAvailability().spotify,cpm_campaigns:true,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
 
  const artistMatch=pathname.match(/^\/api\/artists\/([a-f0-9-]{36})(?:\/(follow))?$/);
  if(artistMatch){
@@ -492,6 +503,7 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  const campMatch=pathname.match(/^\/api\/campaigns\/([a-f0-9-]{36})(?:\/(\w+))?$/);
  if(campMatch){const cid=campMatch[1],action=campMatch[2],camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(cid);if(!camp)throw fail(404,'Campaign not found.');const u=sessionUser(req);if(!action&&req.method==='GET'){const ownerOrAdmin=u?.id===camp.owner_id||u?.role==='admin';const publicEntry=((camp.status==='active'&&camp.paid_cents>camp.spent_cents)||(sandboxCampaignAllowed(camp)&&camp.sandbox_funded_cents>camp.sandbox_spent_cents))&&camp.moderation_status==='visible'&&db.prepare("SELECT 1 FROM users u JOIN releases r ON r.owner_id=u.id WHERE u.id=? AND u.status='active' AND r.id=? AND r.visibility='public'").get(camp.owner_id,camp.release_id);if(!ownerOrAdmin&&!publicEntry)throw fail(404,'Campaign not found.');return send(res,200,{campaign:campaignRows('WHERE c.id=?',[cid])[0]});}
  if(action==='submit'&&req.method==='POST'){
+  if(camp.pricing_model==='cpm')throw fail(403,'CPM campaigns require the official connected TikTok verification flow. Use the verified CPM submission endpoint.');
   const sandbox=sandboxCampaignAllowed(camp);
   if(!sandbox&&!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign submissions are disabled until verified payouts are operational.');
   const actor=requireUser(req);
@@ -522,7 +534,8 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  }
  const subMatch=pathname.match(/^\/api\/submissions\/([a-f0-9-]{36})\/review$/);
  if(subMatch&&req.method==='POST'){
-  const preview=db.prepare('SELECT s.status,c.owner_id FROM submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.id=?').get(subMatch[1]);
+  const preview=db.prepare('SELECT s.status,c.owner_id,c.pricing_model FROM submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.id=?').get(subMatch[1]);
+  if(preview?.pricing_model==='cpm')throw fail(403,'CPM campaigns cannot be approved through per-post rewards. Use the verified CPM artist review.');
   if(preview?.status==='sandbox_pending'){
    const actor=requireUser(req),body=await json(req);
    return reviewSandboxSubmission({db,fail,send,now,id,broadcast},req,res,actor,subMatch[1],body.status);
@@ -530,7 +543,9 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
  }
 
  if(subMatch&&req.method==='POST'){if(!PAYMENT_LAUNCH_ENABLED)throw fail(503,'Paid campaign rewards are disabled until payouts are operational.');const actor=requireCreator(req),sid=subMatch[1],b=await json(req);if(!['approved','rejected'].includes(b.status))throw fail(422,'Invalid decision.');db.exec('BEGIN IMMEDIATE');try{const sub=db.prepare('SELECT * FROM submissions WHERE id=?').get(sid);if(!sub||sub.status!=='pending')throw fail(409,'Submission already reviewed or missing.');const camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(sub.campaign_id);if(camp.owner_id!==actor.id)throw fail(403,'Only the campaign owner can review.');if(b.status==='approved'){if(camp.status!=='active'||camp.spent_cents+camp.reward_cents>camp.paid_cents)throw fail(409,'Campaign does not have sufficient verified funds.');db.prepare('UPDATE campaigns SET spent_cents=spent_cents+?,status=CASE WHEN spent_cents+?>=paid_cents THEN \'completed\' ELSE status END WHERE id=?').run(camp.reward_cents,camp.reward_cents,camp.id);db.prepare('INSERT INTO wallet_ledger VALUES (?,?,?,?,?,?,?)').run(id(),sub.user_id,camp.id,sub.id,'earned_pending_payout',camp.reward_cents,now());}db.prepare('UPDATE submissions SET status=?,reviewed_at=? WHERE id=?').run(b.status,now(),sid);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}broadcast('submission-reviewed');return send(res,200,{ok:true,status:b.status});}
- if(pathname==='/api/wallet'&&req.method==='GET'){const actor=requireUser(req);const entries=db.prepare('SELECT l.*,c.title AS campaign_title FROM wallet_ledger l LEFT JOIN campaigns c ON c.id=l.campaign_id WHERE l.user_id=? ORDER BY l.created_at DESC LIMIT 100').all(actor.id);const totals=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS earned_cents FROM wallet_ledger WHERE user_id=?').get(actor.id);const testEarnings=db.prepare('SELECT COALESCE(sum(quoted_reward_cents),0) AS n FROM sandbox_creator_rewards WHERE user_id=?').get(actor.id).n;return send(res,200,{earned_cents:totals.earned_cents,sandbox_earned_cents:testEarnings,payout_enabled:false,available_to_withdraw_cents:0,entries,note:'Rewards earned are recorded against funded campaigns. Cash withdrawals require a separately configured compliant payout provider and verification.'});}
+ if(pathname==='/api/wallet'&&req.method==='GET'){const actor=requireUser(req);const entries=db.prepare('SELECT l.*,c.title AS campaign_title FROM wallet_ledger l LEFT JOIN campaigns c ON c.id=l.campaign_id WHERE l.user_id=? ORDER BY l.created_at DESC LIMIT 100').all(actor.id);const totals=db.prepare('SELECT COALESCE(sum(amount_cents),0) AS earned_cents FROM wallet_ledger WHERE user_id=?').get(actor.id);const testPostEarnings=db.prepare('SELECT COALESCE(sum(quoted_reward_cents),0) AS n FROM sandbox_creator_rewards WHERE user_id=?').get(actor.id).n;
+ const cpmCredits=db.prepare('SELECT COALESCE(sum(accrued_cents),0) AS n FROM cpm_submissions WHERE clipper_id=?').get(actor.id).n;
+ const testEarnings=testPostEarnings+cpmCredits;return send(res,200,{earned_cents:totals.earned_cents,sandbox_earned_cents:testEarnings,sandbox_cpm_credits_cents:cpmCredits,payout_enabled:false,available_to_withdraw_cents:0,entries,note:'Rewards earned are recorded against funded campaigns. Cash withdrawals require a separately configured compliant payout provider and verification.'});}
  if(pathname==='/api/health'&&req.method==='GET')return send(res,200,{status:'ok',database:'connected',timestamp:now(),payments:'disabled_until_verified_payouts'});
  throw fail(404,'Route not found.');
 }

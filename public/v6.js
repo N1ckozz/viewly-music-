@@ -10,6 +10,7 @@ function card(c,mine=false){
  const id=esc(c.id), reward=Number(c.reward_cents||0), funded=Number(c.is_sandbox?c.sandbox_funded_cents:c.paid_cents||0), spent=Number(c.is_sandbox?c.sandbox_spent_cents:c.spent_cents||0);
  const remaining=Math.max(0,funded-spent),budget=Number(c.budget_cents||0);
  const pct=funded>0?Math.max(0,Math.min(100,Math.round(100*spent/funded))):0;
+ const cpm=c.pricing_model==='cpm';
  const spots=reward>0?Math.floor(remaining/reward):0;
  const platform=esc(c.platform||'Any');
  const status=c.is_sandbox?'TEST · €0 PAID':c.status==='active'?'Active':cap(c.status||'draft');
@@ -21,8 +22,8 @@ function card(c,mine=false){
    '<div class="v6-card-content">'+
     '<div class="v6-card-artist"><span class="v6-artist-dot"></span><span>'+esc(c.artist_name||'Independent artist')+'</span><span class="v6-card-status">'+status+'</span></div>'+
     '<h3>'+esc(c.title)+'</h3><p class="v6-release-name">'+esc(c.release_title||'Original release')+'</p>'+
-    '<div class="v6-card-metrics"><div><small>'+(c.is_sandbox?'TEST REWARD / NOT CASH':'REWARD / APPROVED CLIP')+'</small><strong>'+fmt(reward)+'</strong></div>'+
-    '<div><small>'+(mine?'PLANNED BUDGET':'AVAILABLE SPOTS')+'</small><strong>'+(mine?fmt(budget):String(spots))+'</strong></div></div>'+
+    '<div class="v6-card-metrics"><div><small>'+(cpm?'CPM RATE / 1K TIKTOK VIEWS':c.is_sandbox?'TEST REWARD / NOT CASH':'REWARD / APPROVED CLIP')+'</small><strong>'+fmt(reward)+'</strong></div>'+
+    '<div><small>'+(mine?'PLANNED BUDGET':cpm?'TEST BUDGET REMAINING':'AVAILABLE SPOTS')+'</small><strong>'+(mine?fmt(budget):cpm?fmt(remaining):String(spots))+'</strong></div></div>'+
     '<div class="v6-budget-title"><span>'+(c.is_sandbox?'SANDBOX CREDIT / €0 CHARGED':funded?'Funded campaign':'Awaiting verified funding')+'</span><b>'+(funded?fmt(spent)+' / '+fmt(funded):fmt(0)+' funded')+'</b></div>'+
     '<div class="v6-budget-track" role="progressbar" aria-label="Funded budget allocated" aria-valuenow="'+pct+'" aria-valuemin="0" aria-valuemax="100"><i style="width:'+pct+'%"></i></div>'+
     '<div class="v6-card-footer"><button type="button" class="v6-btn v6-btn-primary v6-btn-full" data-action="'+action+'" data-id="'+id+'">'+cta+' '+icon('arrow',15)+'</button></div>'+

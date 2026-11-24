@@ -72,7 +72,7 @@ renderShell=function(inner){
  html=html.replace('class="v-app-shell"','class="v-app-shell v7-app'+(V7.compact?' v7-nav-mini':'')+'"');
  const newRail='<nav class="v-rail" aria-label="Desktop primary navigation">'+
   sideGroup('DISCOVER',[['discover','Home','discover'],['releases','Music library','releases',S.releases.length],['campaigns','Campaigns','campaigns',S.campaigns.length]])+
-  sideGroup('YOUR WORKSPACE',[['clips','Clip studio','scissors'],['studio','Artist tools','studio'],['wallet','Rewards','wallet']])+
+  sideGroup('YOUR WORKSPACE',[['clips','Clip studio','scissors'],['studio','Artist tools','studio'],['wallet','Rewards','wallet'],['connections','Social accounts','user']])+
   '</nav>';
  const navMatch=/<nav class="v-rail" aria-label="Desktop primary navigation">[\s\S]*?<\/nav>/;
  if(!navMatch.test(html))throw Error('Navigation layout unavailable');
@@ -94,6 +94,7 @@ renderShell=function(inner){
 const tools=[
  {page:'studio',icon:'studio',title:'Artist studio',desc:'Releases and campaign drafts'},
  {page:'wallet',icon:'wallet',title:'Rewards',desc:'Real earnings and activity'},
+ {page:'connections',icon:'user',title:'Connected accounts',desc:'Link TikTok for verified clip ownership and Spotify'},
  {page:'plans',icon:'bolt',title:'Plans & pricing',desc:'Monthly and yearly plans · free test mode'},
  {action:'submissions',icon:'campaigns',title:'My submissions',desc:'Track campaign reviews'},
  {action:'security',icon:'shield',title:'Account security',desc:'Sessions and authenticator'}
@@ -140,7 +141,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet','admin','plans'].includes(place))return;
+ if(!['studio','wallet','admin','plans','connections'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});

@@ -5,7 +5,7 @@ const A={tab:'overview',query:'',data:null,loading:false,seq:0};
 const defs=[
  ['overview','Overview','discover'],['users','Accounts','user'],['releases','Music','releases'],
  ['campaigns','Campaigns','campaigns'],['submissions','Submissions','scissors'],
- ['reports','Reports','shield'],['comments','Comments','campaigns'],['payments','Payments','wallet'],['subscriptions','Subscriptions','bolt'],
+ ['reports','Reports','shield'],['comments','Comments','campaigns'],['payments','Payments','wallet'],['subscriptions','Subscriptions','bolt'],['cpm','CPM verification','shield'],
  ['settings','Site control','studio'],['audit','Audit trail','shield']
 ];
 const icon=(k,n=17)=>ico(k,n);
@@ -195,6 +195,18 @@ function payments(data){
    row('<b>'+esc(o.campaign_title)+'</b>',fmtEur(o.quoted_amount_cents),'<b class="adm-money">'+fmtEur(o.charged_cents)+'</b>',fmtDate(o.created_at)
    )),'No sandbox campaign checkouts yet')+'</section>';
 }
+function cpmReview(data){
+ return '<div class="adm-warning">'+icon('shield',16)+' Only official TikTok API-reported views, not independent bot-free certification. Staff can clear or impose holds after reviewing evidence; never manually invent views or financial credits.</div>'+
+  table(['Clipper / Campaign','TikTok post','API views','Review','Risk / Availability','Actions'],(data.rows||[]).map(s=>
+   row('<b>@'+esc(s.clipper_name)+'</b><small>'+esc(s.campaign_title)+'</small>',
+    '<a href="'+esc(s.post_url)+'" rel="noopener noreferrer" target="_blank">Open original post</a><small>'+esc(s.tiktok_video_id)+'</small>',
+    '<b class="adm-money">'+Number(s.highest_views||0).toLocaleString('en-GB')+'</b><small>'+fmtEur(s.accrued_cents)+' test credits · €0 cash</small>',
+    tag(s.review_status),
+    tag(s.post_access)+'<small>'+esc(s.risk_flag||'No heuristic flag')+'</small><small>'+fmtDate(s.last_checked_at)+'</small>',
+    '<div class="adm-actions">'+btn('Hold','cpm-hold',s.submission_id,'danger')+
+    btn('Clear hold','cpm-clear',s.submission_id,'good')+'</div>'
+   )),'No TikTok CPM submissions yet');
+}
 function subscriptions(data){
  return '<div class="adm-warning">'+icon('shield',16)+' Test entitlements only. All charges are €0 and this section cannot invent payments, credits or payouts.</div>'+
   table(['Account','Plan','Interval','Status','Expires','History'],(data.rows||[]).map(s=>
@@ -244,6 +256,7 @@ function view(response){
   case 'comments':return comments(response);
   case 'payments':return payments(response);
   case 'subscriptions':return subscriptions(response);
+  case 'cpm':return cpmReview(response);
   case 'settings':return settings(response);
   case 'audit':return auditTable(response.rows||[]);
   default:return '<div class="adm-empty">Section unavailable</div>';
@@ -300,6 +313,16 @@ document.addEventListener('click',async e=>{
  e.preventDefault();e.stopImmediatePropagation();
  const action=node.dataset.admAction,id=node.dataset.admId,extra=node.dataset.admExtra;
  if(action==='refresh'){A.data=null;load();return}
+ if(action==='cpm-hold'||action==='cpm-clear'){
+  const decision=action==='cpm-hold'?'hold':'clear';
+  const note=window.prompt(decision==='hold'?'Explain the evidence for holding this CPM submission (15+ characters):':'Explain the recent official evidence that justifies lifting the hold (15+ characters):','');
+  if(note===null)return;
+  if(note.trim().length<15)return toast('An evidence-based review note of at least 15 characters is required.',true);
+  try{await api('/admin/cpm/'+encodeURIComponent(id)+'/risk','POST',{decision,note:note.trim()});
+   toast('Audit-logged risk review saved. No views or cash balance changed.');A.data=null;load();}
+  catch(err){toast(err.message||'Risk review failed.',true)}
+  return;
+ }
  const kind={
   'user-status':'users','edit-user':'users',
   'release-visibility':'releases','edit-release':'releases',
