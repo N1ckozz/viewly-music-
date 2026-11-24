@@ -94,6 +94,7 @@ renderShell=function(inner){
 const tools=[
  {page:'studio',icon:'studio',title:'Artist studio',desc:'Releases and campaign drafts'},
  {page:'wallet',icon:'wallet',title:'Rewards',desc:'Real earnings and activity'},
+ {page:'plans',icon:'bolt',title:'Plans & pricing',desc:'Monthly and yearly plans · free test mode'},
  {action:'submissions',icon:'campaigns',title:'My submissions',desc:'Track campaign reviews'},
  {action:'security',icon:'shield',title:'Account security',desc:'Sessions and authenticator'}
 ];
@@ -139,7 +140,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet','admin'].includes(place))return;
+ if(!['studio','wallet','admin','plans'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});

@@ -1,0 +1,154 @@
+/* Viewly V9 — Premium creator subscriptions and zero-charge checkout, responsive. */
+.bill-page{min-width:0;max-width:1680px;margin:0 auto;padding-bottom:70px;color:#f5f7ff}
+.bill-hero{padding:35px 0 22px;position:relative;overflow:hidden}
+.bill-hero:after{content:'';position:absolute;top:-70px;right:3%;width:310px;height:260px;
+ background:radial-gradient(ellipse,#6d7cdb33,transparent 70%);filter:blur(15px);pointer-events:none}
+.bill-overline{display:inline-flex;align-items:center;gap:8px;color:#aebff5;font:660 10px var(--mono);letter-spacing:.13em}
+.bill-hero h1{font:710 clamp(47px,6vw,91px)/.97 var(--display)!important;letter-spacing:-.075em!important;margin:14px 0 14px;color:#f4f6ff}
+.bill-hero h1 em{font-style:normal;color:#a4b4ff}
+.bill-hero>p{max-width:700px;font:520 14px/1.75 var(--body);color:#b7c3dc;margin:0 0 18px}
+.bill-mode-note{display:inline-flex;align-items:center;gap:10px;padding:10px 13px;max-width:100%;
+ border:1px solid #81d8b34d;border-radius:10px;background:#81d7b00e;color:#b1ebd7;font:640 10px var(--mono);letter-spacing:.025em}
+.bill-mode-note svg{flex:none}
+.bill-cycle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 24px}
+.bill-cycle>span{font:590 10px var(--mono);color:#abb9d0}
+.bill-cycle-selector{display:inline-flex;align-items:center;gap:5px;border-radius:13px;border:1px solid #aebeff37;
+ padding:5px;background:#8fa9e30a;box-shadow:inset 0 1px #ffffff14}
+.bill-cycle-selector button{border:1px solid transparent;padding:10px 16px;min-height:37px;border-radius:10px;
+ background:transparent;color:#b8c5e0;font:690 12px var(--body);transition:background .2s,border .2s,color .2s}
+.bill-cycle-selector button.current{color:#fff;background:#8ca2fa30;border-color:#b9caff5e;box-shadow:inset 0 1px #ffffff26,0 5px 14px #0005}
+.bill-cycle-selector button>span{margin-left:8px;font:740 9px var(--mono);color:#afeed5}
+.bill-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:stretch;gap:13px;margin-bottom:28px}
+.bill-card{position:relative;display:flex;flex-direction:column;min-width:0;border:1px solid #bbcbff3b;
+ border-radius:18px;background:radial-gradient(ellipse 90% 37% at 50% 0%,#9eaeff16,transparent),linear-gradient(145deg,#171e32,#0c111d);
+ padding:22px 18px;box-shadow:inset 0 1px #ffffff17,0 14px 32px #0005;
+ transition:border-color .22s,transform .22s,box-shadow .22s}
+.bill-card:hover{transform:translateY(-5px);border-color:#b8cbff97;box-shadow:inset 0 1px #ffffff3d,0 23px 42px #0008}
+.bill-card.bill-featured{border-color:#9db6ff;box-shadow:inset 0 1px #ffffff54,0 15px 35px #5464e124;background:
+ radial-gradient(ellipse 140% 50% at 56% 0%,#7897ff46,transparent),linear-gradient(145deg,#1d2750,#11172b 65%)}
+.bill-card.bill-current{border-color:#84deb98f}
+.bill-popular{position:absolute;top:-14px;left:16px;display:inline-flex;align-items:center;gap:6px;background:#c3d1ff;color:#1a2242;
+ border:1px solid #d5e2ff;padding:6px 10px;border-radius:7px;font:750 9px var(--mono);letter-spacing:.07em;box-shadow:0 6px 15px #0006}
+.bill-popular>span{display:flex}
+.bill-tier{display:flex;align-items:center;justify-content:space-between;gap:10px;font:630 9px var(--mono);color:#a1b0cf;letter-spacing:.08em}
+.bill-active-label{color:#97e9c7;font:700 9px var(--mono)}
+.bill-card h3{font:750 clamp(19px,1.9vw,25px)/1.16 var(--display)!important;letter-spacing:-.055em;margin:17px 0 4px;color:#fff}
+.bill-tagline{font:520 11px var(--body);color:#b9c6df;margin:0 0 21px;min-height:19px}
+.bill-price{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.bill-price strong{font:730 clamp(29px,3vw,42px)/1 var(--display);letter-spacing:-.07em;color:#f7faff}
+.bill-price>span{font:560 11px var(--body);color:#9caecf}
+.bill-price-details{font:600 10px var(--body);min-height:28px;margin:10px 0 13px;color:#a4c1ff}
+.bill-plan-lead{border-top:1px solid #afc2ff2c;padding-top:14px;margin-bottom:11px;font:650 11px var(--body);color:#d8e3ff}
+.bill-cta{min-height:44px;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+ font:730 12px var(--body);border:1px solid #b8caff5d;border-radius:11px;color:#e9f0ff;background:linear-gradient(115deg,#afc1ff2c,#8094ef1b);
+ transition:background .2s,transform .2s,border .2s}
+.bill-cta:hover{transform:translateY(-1px);border-color:#d2ddff;background:#a9beff42}
+.bill-cta.is-primary{color:#18203a;background:linear-gradient(110deg,#cdd9ff,#809dff);border-color:#dde6ff;box-shadow:inset 0 1px #fff9,0 9px 24px #6981ff30}
+.bill-cta:disabled{opacity:.65;cursor:default;transform:none}
+.bill-features{list-style:none;margin:21px 0 17px;padding:0;display:flex;flex-direction:column;gap:11px;flex:1}
+.bill-features li{display:flex;gap:9px;align-items:start;font:550 11px/1.45 var(--body);color:#c1cde3}
+.bill-features svg{color:#9fcbdd;flex:none}
+.bill-cap{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #aabfff1e}
+.bill-cap span{font:580 10px var(--body);color:#a7b5d0}
+.bill-cap b{font:700 11px var(--mono);color:#edf3ff}
+.bill-bottom{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:18px;margin-top:33px}
+.bill-bottom>section{min-width:0}
+.bill-bottom>section>.bill-overline,.bill-faq>.bill-overline{margin-bottom:14px}
+.bill-state{display:flex;align-items:center;gap:13px;border:1px solid #b2c3ff35;border-radius:15px;padding:18px;background:#c4d3ff0e}
+.bill-state>span{display:grid;place-items:center;background:#9cb3fb20;color:#b5c5fb;width:39px;height:39px;border-radius:11px;flex:none}
+.bill-state>div{min-width:0;flex:1}
+.bill-state b{font:700 13px var(--body);color:#fff}
+.bill-state p{font:530 11px/1.65 var(--body);color:#adbdd8;margin:5px 0 0}
+.bill-inline{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid #b8c9ff40;border-radius:9px;
+ font:650 11px var(--body);background:#c4d4ff12;color:#d0dfff}
+.bill-inline:hover{background:#a3b6ff2b;border-color:#bcd0ff}
+.bill-subscription{border:1px solid #bdcbff37;border-radius:16px;padding:22px;background:linear-gradient(130deg,#a9bcff14,#12182b9c)}
+.bill-state-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.bill-state-head h2{font:720 23px var(--display)!important;color:#fff;letter-spacing:-.05em;margin:9px 0}
+.bill-state-head h2 small{font:730 9px var(--mono);color:#a2edc8;background:#63c9a21c;padding:5px 8px;border:1px solid #80deb85f;border-radius:6px;vertical-align:middle;letter-spacing:.03em;margin-left:6px}
+.bill-state-head p{font:540 11px/1.7 var(--body);color:#afc0da}
+.bill-account-icon{display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:15px;background:#95aaf828;border:1px solid #b6c8ff48;color:#d4e0ff}
+.bill-period{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:16px 0;padding:14px 0;border-top:1px solid #baccff23;border-bottom:1px solid #baccff23}
+.bill-period span{font:520 11px var(--body);color:#aebdd6}.bill-period b{font:680 11px var(--body);color:#e5edff;text-align:right}
+.bill-usage{display:grid;gap:14px;margin-top:19px}
+.bill-usage-row>div{display:flex;justify-content:space-between;gap:8px;margin-bottom:7px}
+.bill-usage-row b{font:650 11px var(--body);color:#d6e3f8}
+.bill-usage-row span{font:590 10px var(--mono);color:#a8badb}
+.bill-usage-row meter{width:100%;height:6px;display:block;appearance:none}
+.bill-usage-row meter::-webkit-meter-bar{height:6px;border:0;border-radius:20px;background:#8396be2b}
+.bill-usage-row meter::-webkit-meter-optimum-value{border-radius:20px;background:linear-gradient(90deg,#8ea9ff,#b5c6ff)}
+.bill-usage-row meter::-moz-meter-bar{background:#9db6ff;border-radius:20px}
+.bill-manage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.bill-faq{padding:22px;border:1px solid #b1c3ff30;border-radius:16px;background:#9babf20b}
+.bill-faq h2{font:720 26px/1.16 var(--display)!important;color:#e8edff;letter-spacing:-.06em;margin:10px 0 20px}
+.bill-faq>div{padding:14px 0;border-top:1px solid #bdccff21}
+.bill-faq b{font:680 12px var(--body);color:#e2ecff}
+.bill-faq p{font:510 11px/1.7 var(--body);color:#a9bbd9;margin:5px 0 0}
+.bill-history{border:1px solid #bdcdff2c;border-radius:16px;padding:20px;margin-top:15px;background:#b9c9ff0a}
+.bill-history-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.bill-history h3{font:710 16px var(--display)!important;color:#fff;letter-spacing:-.035em;margin:0}
+.bill-history-head>span{font:590 10px var(--mono);color:#9bb1d2}
+.bill-event{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid #bcccff1e}
+.bill-event:last-child{border-bottom:0}
+.bill-event-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:#abedd2;border:1px solid #8ed6ba48;background:#83c9a719}
+.bill-event>div{flex:1;min-width:0}
+.bill-event b{display:block;font:680 11px var(--body);color:#f1f5ff;text-transform:capitalize}
+.bill-event small{display:block;margin-top:4px;font:510 10px var(--body);color:#9caecb}
+.bill-event-charge{font:650 10px var(--mono);color:#9be4c2}
+.bill-history>p{font:510 10px/1.6 var(--body);color:#9aaac4}
+.bill-rail{padding-top:13px;border-top:1px solid #a0b9f72a}
+.bill-notice{border:1px solid #e8b69060;background:#d79f6d1b;padding:13px 15px;border-radius:10px;color:#f1c8b6;font:540 12px var(--body)}
+.bill-loading{padding:25px;border:1px solid #b8ccff2e;border-radius:14px;color:#a9bbdb}
+.bill-card:focus-within{border-color:#baccff}
+.bill-cycle-selector button:focus-visible,.bill-cta:focus-visible,.bill-inline:focus-visible{outline:2px solid #c5d7ff;outline-offset:3px}
+@media(max-width:1200px){.bill-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bill-bottom{grid-template-columns:1fr}}
+@media(max-width:700px){
+ .bill-page{padding-bottom:30px}
+ .bill-hero{padding:14px 0 12px}
+ .bill-hero h1{font-size:clamp(42px,10vw,65px)!important}
+ .bill-hero>p{font-size:12px;line-height:1.7}
+ .bill-mode-note{font-size:9px;line-height:1.5}
+ .bill-cycle{display:block;margin:15px 0}
+ .bill-cycle>span{display:block;margin-top:9px;font-size:9px}
+ .bill-grid{grid-template-columns:1fr;gap:15px}
+ .bill-card{padding:22px 19px}
+ .bill-featured{margin-top:9px}
+ .bill-card h3{font-size:24px!important}
+ .bill-price strong{font-size:39px}
+ .bill-features{gap:9px}
+ .bill-bottom{gap:13px;margin-top:23px}
+ .bill-subscription,.bill-faq{padding:16px}
+ .bill-state{align-items:flex-start;flex-wrap:wrap}
+ .bill-state>.bill-inline{width:100%;justify-content:center}
+ .bill-faq h2{font-size:23px!important}
+ .bill-history{padding:15px}
+}
+@media(prefers-reduced-motion:reduce){.bill-card,.bill-cta,.bill-inline,.bill-cycle-selector button{transition:none!important;transform:none!important}}
+
+/* Real creator campaign simulation — prominent financial separation. */
+.bill-test-campaign,.bill-test-funding,.bill-wallet-test{
+ border:1px solid #94d8c454;border-radius:13px;padding:17px;
+ background:linear-gradient(135deg,#77c9b01b,#1e344647);margin:16px 0;
+}
+.bill-test-funding h3{font:710 19px var(--display);color:#e7fff5;margin:11px 0 8px;letter-spacing:-.035em}
+.bill-test-funding p,.bill-wallet-test p{font:520 11px/1.7 var(--body);color:#b5d9d2;margin:0 0 14px}
+.bill-test-funding .bill-cta{width:100%}
+.bill-campaign-test-flag{
+ display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 14px;margin-bottom:17px;
+ border:1px solid #9fdbbf7d;border-radius:10px;color:#c4f5df;background:#659a7c21;
+ font:700 10px/1.6 var(--mono);letter-spacing:.02em;
+}
+.bill-test-banner{display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:18px;
+ border:1px solid #87dcc071;border-radius:12px;color:#c8f0e3;
+ background:linear-gradient(110deg,#669f8740,#182c3d30);font:570 11px/1.7 var(--body)}
+.bill-test-banner svg{flex:none}
+.bill-test-banner b{font-weight:780;color:#d9fff2}
+.v6-campaign-card.is-sandbox{border-color:#8ecab068!important}
+.v6-campaign-card.is-sandbox .v6-card-status{color:#a5f1d2!important}
+.v6-campaign-card.is-sandbox .v6-budget-title span{color:#a3e7ce!important}
+.v6-campaign-card.is-sandbox:before{box-shadow:inset 0 1px #b0f0d02d}
+.bill-wallet-test{margin:0 0 17px}
+.bill-wallet-test h3{font:730 clamp(29px,4vw,38px)/1.08 var(--display);color:#c8f7df;margin:10px 0;letter-spacing:-.065em}
+.bill-wallet-test p{color:#c6dfd4}
+.bill-wallet-test .bill-inline{max-width:100%}
+@media(max-width:700px){.bill-test-banner{align-items:flex-start}.bill-test-funding{padding:13px}.bill-wallet-test{padding:15px}}
