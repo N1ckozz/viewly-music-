@@ -82,7 +82,7 @@ campaignsPage=function(){
    '<button type="button" class="v6-btn v6-btn-primary v6-create-btn" data-action="'+(isCreator()?'create-campaign':S.user?'role':'register')+'">'+icon('plus',17)+' Create campaign</button></header>';
  const scope='<div class="v6-main-tabs" role="tablist" aria-label="Campaigns"><button type="button" role="tab" aria-selected="'+(M.scope==='explore')+'" data-v6-scope="explore" class="'+(M.scope==='explore'?'is-current':'')+'">'+icon('discover',16)+' Explore campaigns</button>'+
   '<button type="button" role="tab" aria-selected="'+(M.scope==='mine')+'" data-v6-scope="mine" class="'+(M.scope==='mine'?'is-current':'')+'">'+icon('studio',16)+' My campaigns</button></div>';
- const hint='<div class="v6-integrity-note">'+icon('shield',18)+' <span>Only genuinely funded campaigns appear publicly. External social views and creator payouts are not automated or certified until their integrations are enabled.</span></div>';
+ const hint='<div class="v6-integrity-note">'+icon('shield',18)+' <span>'+(S.config?.billing_sandbox_enabled?'SANDBOX: test campaigns use €0 payments and non-withdrawable reward quotes. Real paid campaigns require verified provider funding and compliant payouts.':'Only genuinely funded campaigns appear publicly. External social views and creator payouts are not automated or certified until their integrations are enabled.')+'</span></div>';
  return h+scope+toolbar()+'<section id="v6-results" aria-live="polite">'+campaignResults()+'</section>'+hint;
 };
 const previousClips=clipsPage;
