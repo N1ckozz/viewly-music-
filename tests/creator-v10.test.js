@@ -7,7 +7,7 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {fileURLToPath} from 'node:url';
-import {calculateCpmDelta} from '../creator-campaigns.js';
+import {calculateCpmDelta,applyOfficialObservation} from '../creator-campaigns.js';
 import {parseTikTokUrl} from '../social-oauth.js';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -152,5 +152,42 @@ test('artist can create complete CPM brief and media kit while unlinked clippers
  assert.equal(db.prepare('SELECT count(*) AS n FROM payment_orders').get().n,0);
  assert.equal(db.prepare('SELECT count(*) AS n FROM wallet_ledger').get().n,0);
  assert.equal(db.prepare('SELECT count(*) AS n FROM cpm_events').get().n,0);
+ db.close();
+});
+
+test('official view observations accrue only positive noncash delta; deletion and suspicious activity freeze new credits',()=>{
+ const db=new DatabaseSync(':memory:');
+ db.exec("CREATE TABLE campaigns(id TEXT PRIMARY KEY,cpm_rate_cents INTEGER,min_views INTEGER,max_clip_cents INTEGER,sandbox_funded_cents INTEGER,sandbox_spent_cents INTEGER,status TEXT);");
+ db.exec("CREATE TABLE cpm_submissions(submission_id TEXT PRIMARY KEY,campaign_id TEXT,clipper_id TEXT,tiktok_video_id TEXT,reported_views INTEGER,highest_views INTEGER,accrued_cents INTEGER,last_checked_at TEXT,submitted_at TEXT,review_status TEXT,monitoring_until TEXT,hold_until TEXT,post_access TEXT,risk_flag TEXT,missing_checks INTEGER,settled_cents INTEGER);");
+ db.exec("CREATE TABLE cpm_view_snapshots(id TEXT PRIMARY KEY,submission_id TEXT,provider_views INTEGER,post_access TEXT,checked_at TEXT,provider TEXT,note TEXT);");
+ db.exec("CREATE TABLE cpm_events(id TEXT PRIMARY KEY,submission_id TEXT,prior_cents INTEGER,new_cents INTEGER,delta_cents INTEGER,observed_views INTEGER,created_at TEXT,note TEXT);");
+ const campaign=crypto.randomUUID(),sid=crypto.randomUUID(),old=new Date(Date.now()-3600000).toISOString();
+ db.prepare("INSERT INTO campaigns VALUES(?,?,?,?,?,?,?)").run(campaign,100,1000,2500,10000,0,'sandbox_active');
+ db.prepare("INSERT INTO cpm_submissions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(sid,campaign,'clipper','7234567890123456789',0,0,0,old,old,'approved',new Date(Date.now()+10*86400000).toISOString(),null,'visible','',0,0);
+ const argumentsBase={db,sid,id:()=>crypto.randomUUID(),now:()=>new Date().toISOString(),fail};
+ const check=(views,owned=true)=>applyOfficialObservation({...argumentsBase,remote:{owned,available:owned,views}});
+ const initial=check(4000);assert.equal(initial.new_test_credit_cents,400);
+ assert.equal(initial.total_test_credit_cents,400);
+ const repeat=check(4000);assert.equal(repeat.new_test_credit_cents,0);
+ assert.equal(db.prepare('SELECT sandbox_spent_cents FROM campaigns').get().sandbox_spent_cents,400);
+ const growth=check(8000);assert.equal(growth.new_test_credit_cents,400);
+ const missing=check(0,false);assert.equal(missing.new_test_credit_cents,0);
+ assert.equal(missing.post_access,'unconfirmed');
+ const deleted=check(0,false);assert.equal(deleted.risk_flag,'POST_UNAVAILABLE');
+ assert.equal(deleted.post_access,'missing');
+ assert.equal(deleted.total_test_credit_cents,800,'historical API observations are not erased');
+ const restored=check(9000);
+ assert.equal(restored.new_test_credit_cents,0,'no credits while a visibility flag is held');
+ assert.equal(restored.risk_flag,'POST_UNAVAILABLE');
+ assert.equal(db.prepare('SELECT COALESCE(sum(delta_cents),0) AS n FROM cpm_events').get().n,800);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM cpm_view_snapshots').get().n,6);
+ db.prepare("UPDATE cpm_submissions SET risk_flag='' WHERE submission_id=?").run(sid);
+ const clear=check(9000);
+ assert.equal(clear.new_test_credit_cents,100);
+ const anomaly=check(500000);
+ assert.equal(anomaly.new_test_credit_cents,0);
+ assert.equal(anomaly.risk_flag,'UNUSUAL_VIEW_SPIKE');
+ assert.equal(db.prepare('SELECT sandbox_spent_cents FROM campaigns').get().sandbox_spent_cents,900);
  db.close();
 });
