@@ -1,7 +1,7 @@
 /* Viewly V9 — premium pricing, genuine sandbox subscriptions, zero money transfers. */
 (()=>{
 'use strict';
-const B={cycle:'monthly',catalog:null,account:null,loadedFor:'',busy:false,loading:false,error:''};
+const B={cycle:'monthly',catalog:null,account:null,loadedFor:'',busy:false,loading:false,failed:false,error:''};
 const icon=(type,n=18)=>ico(type,n);
 const money=c=>new Intl.NumberFormat('en-IE',{style:'currency',currency:'EUR',minimumFractionDigits:0,maximumFractionDigits:2}).format(Number(c||0)/100);
 const longDate=d=>d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}):'—';
@@ -82,7 +82,7 @@ function page(){
   '<button data-bill-cycle="monthly" aria-pressed="'+(B.cycle==='monthly')+'" class="'+(B.cycle==='monthly'?'current':'')+'">Monthly</button>'+
   '<button data-bill-cycle="yearly" aria-pressed="'+(B.cycle==='yearly')+'" class="'+(B.cycle==='yearly'?'current':'')+'">Yearly <span>SAVE 17%</span></button></div>'+
   '<span>Reference prices only · Actual charge today: €0.00</span></div>'+
-  (B.error?'<div class="bill-notice error">'+esc(B.error)+'</div>':'')+
+  (B.error?'<div class="bill-notice error">'+esc(B.error)+' <button class="bill-inline" data-bill-action="retry">Retry</button></div>':'')+
   (plans.length?'<div class="bill-grid">'+plans.map((p,i)=>planCard(p,i)).join('')+'</div>':
     '<div class="bill-loading">Loading pricing from Viewly…</div>')+
   '<div class="bill-bottom"><section><span class="bill-overline">ACCOUNT / MANAGEMENT</span>'+statePanel()+eventPanel()+'</section>'+
@@ -107,18 +107,18 @@ let currentLoading=null;
 async function load(force=false){
  if(B.loading&&!force)return;
  if(B.catalog&&!force&&B.loadedFor===(S.user?.id||'guest'))return;
- B.loading=true;B.error='';
+ B.loading=true;B.error='';B.failed=false;
  try{
   const results=await Promise.all([api('/billing/plans'),S.user?api('/billing/me'):Promise.resolve(null)]);
   B.catalog=results[0];B.account=results[1];B.loadedFor=S.user?.id||'guest';
- }catch(err){B.error=err.message||'Pricing is currently unavailable.';B.loadedFor=S.user?.id||'guest';}
+ }catch(err){B.error=err.message||'Pricing is currently unavailable.';B.failed=true;B.loadedFor=S.user?.id||'guest';}
  finally{
   B.loading=false;
   if(S.page==='plans')render();
  }
 }
 const prevRender=render;
-render=function(){prevRender();if(S.page==='plans'&&!B.loading&&(!B.catalog||B.loadedFor!==(S.user?.id||'guest')))load()};
+render=function(){prevRender();if(S.page==='plans'&&!B.loading&&((!B.catalog&&!B.failed)||B.loadedFor!==(S.user?.id||'guest')))load()};
 async function activate(plan){
  if(!S.user){authModal('register');return}
  if(!B.catalog||B.catalog.mode!=='sandbox'){toast('Subscription activation is unavailable until sandbox mode is enabled.',true);return}
@@ -135,7 +135,7 @@ async function activate(plan){
   await load(true);
   toast(p.name+' activated in test mode. €0.00 charged.');
  }catch(err){toast(err.message||'Could not change plan.',true)}
- finally{B.busy=false}
+ finally{B.busy=false;if(S.page==='plans')render()}
 }
 async function operation(action){
  if(!S.user)return authModal('login');
@@ -149,7 +149,7 @@ async function operation(action){
  try{await api('/billing/'+action,'POST',{});B.loadedFor='';await load(true);
   toast(action==='cancel'?'Test auto-renewal cancelled.':action==='resume'?'Sandbox auto-renewal resumed.':'Switched to Free.');
  }catch(err){toast(err.message||'Cannot change subscription.',true)}
- finally{B.busy=false}
+ finally{B.busy=false;if(S.page==='plans')render()}
 }
 document.addEventListener('click',e=>{
  const cycle=e.target.closest('[data-bill-cycle]');
@@ -158,7 +158,7 @@ document.addEventListener('click',e=>{
  if(plan){e.preventDefault();e.stopImmediatePropagation();if(plan.dataset.billPlan==='free')operation('free');else activate(plan.dataset.billPlan);return}
  const command=e.target.closest('[data-bill-action]');
  if(command){e.preventDefault();e.stopImmediatePropagation();const op=command.dataset.billAction;
-  if(op==='login'){authModal('register');return}if(['cancel','resume','free'].includes(op))operation(op);
+  if(op==='login'){authModal('register');return}if(op==='retry'){B.loadedFor='';B.failed=false;load(true);return}if(['cancel','resume','free'].includes(op))operation(op);
  }
 },true);
 
