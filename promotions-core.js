@@ -146,7 +146,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
     if(current.status==='sandbox_active'){
      const order=db.prepare('SELECT * FROM promo_orders WHERE campaign_id=?').get(c.id);
      const q=order&&JSON.parse(order.quote_json);
-     if(data.confirm===true&&q?.quote_hash===data.quote_hash){db.exec('COMMIT');return send(res,200,{ok:true,already_active:true,mode:'sandbox',charged_cents:0,quote:q});}
+     if(data.confirm===true&&q?.quote_hash===data.quote_hash){db.exec('COMMIT');return send(res,200,{ok:true,already_active:true,mode:'sandbox',charged_cents:0,quote:q,film:JSON.parse(db.prepare('SELECT snapshot_json FROM campaign_launch_films WHERE campaign_id=? AND owner_id=?').get(c.id,actor.id)?.snapshot_json||'null')});}
     }
     if(!['draft','awaiting_payment'].includes(current.status))throw fail(409,'Campaign is already funded.');
     const q=ready(current,brand);
@@ -163,7 +163,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
     db.prepare('INSERT INTO campaign_launch_films VALUES(?,?,?,?)').run(c.id,actor.id,JSON.stringify(snapshot),at);
     for(const x of q.placements)db.prepare('INSERT INTO promo_placements VALUES(?,?,?,?)').run(c.id,x.placement,at,new Date(Date.parse(at)+x.hours*3600000).toISOString());
     db.prepare("UPDATE campaigns SET status='sandbox_active',sandbox_funded_cents=budget_cents,sandbox_spent_cents=0,launched_at=? WHERE id=?").run(at,c.id);
-    db.exec('COMMIT');broadcast('sandbox-campaign');return send(res,201,{ok:true,mode:'sandbox',charged_cents:0,quote:q});
+    db.exec('COMMIT');broadcast('sandbox-campaign');return send(res,201,{ok:true,mode:'sandbox',charged_cents:0,quote:q,film:snapshot});
    }catch(e){db.exec('ROLLBACK');throw e;}
   }
   throw fail(405,'Promotion operation unavailable.');
