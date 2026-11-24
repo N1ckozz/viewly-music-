@@ -9,7 +9,7 @@ const shortDate=d=>d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month
 function price(p){return money(p[B.cycle+'_cents'])}
 function numberOrZero(n){return Number(n||0).toLocaleString('en-GB')}
 function planCard(p,index){
- const current=B.account?.entitlement?.plan_id===p.id;
+ const current=B.account?.entitlement?.plan_id===p.id||(!B.account&&p.id==='free');
  const free=p.id==='free';
  const quote=p[B.cycle+'_cents'];
  const discount=p.yearly_discount_percent||0;
@@ -111,7 +111,7 @@ async function load(force=false){
  try{
   const results=await Promise.all([api('/billing/plans'),S.user?api('/billing/me'):Promise.resolve(null)]);
   B.catalog=results[0];B.account=results[1];B.loadedFor=S.user?.id||'guest';
- }catch(err){B.error=err.message||'Pricing is currently unavailable.';}
+ }catch(err){B.error=err.message||'Pricing is currently unavailable.';B.loadedFor=S.user?.id||'guest';}
  finally{
   B.loading=false;
   if(S.page==='plans')render();
