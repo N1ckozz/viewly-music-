@@ -54,7 +54,7 @@ export function initCreatorCampaigns(db){
  db.exec("CREATE TABLE IF NOT EXISTS campaign_review_audit(id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL REFERENCES campaigns(id),submission_id TEXT,actor_id TEXT NOT NULL REFERENCES users(id),action TEXT NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL);");
  db.exec('CREATE INDEX IF NOT EXISTS idx_cpm_by_artist ON cpm_submissions(campaign_id,submitted_at DESC)');
 }
-const publicAsset=(a)=>({id:a.id,label:a.label,mime:a.mime,bytes:a.bytes,sha256:a.sha256,created_at:a.created_at,download_url:'/api/campaigns/'+a.campaign_id+'/assets/'+a.id});
+const publicAsset=(a)=>({id:a.id,label:a.label,mime:a.mime,bytes:a.bytes,sha256:a.sha256,created_at:a.created_at,download_url:'/api/campaigns/'+a.campaign_id+'/assets/'+a.id,preview_url:['image/jpeg','image/png','image/webp','video/mp4','video/webm'].includes(a.mime)?'/api/campaigns/'+a.campaign_id+'/assets/'+a.id+'?preview=1':null});
 const publicSubmission=(r)=>({submission_id:r.submission_id,campaign_id:r.campaign_id,clipper_id:r.clipper_id,
  clipper_name:r.clipper_name,tiktok_video_id:r.tiktok_video_id,post_url:r.post_url,posted_at:r.posted_at,
  submitted_at:r.submitted_at,review_status:r.review_status,review_reason:r.review_reason,
@@ -160,7 +160,7 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
    if(req.method==='GET'&&assets[2]){
     const asset=db.prepare('SELECT * FROM campaign_assets WHERE id=? AND campaign_id=?').get(assets[2],campaign.id);
     if(!asset||asset.hidden_at)throw fail(404,'Asset not available.');
-    res.setHeader('Content-Disposition','attachment; filename="'+asset.label.replace(/[^a-zA-Z0-9 ._-]/g,'_').slice(0,70)+'"');
+    res.setHeader('Content-Disposition',url.searchParams.get('preview')==='1'&&asset.mime!=='application/pdf'?'inline':'attachment; filename="'+asset.label.replace(/[^a-zA-Z0-9 ._-]/g,'_').slice(0,70)+'"');
     res.setHeader('Cache-Control','private, no-store');
     return serveFile(req,res,path.join(UPLOADS,asset.storage_name));
    }
