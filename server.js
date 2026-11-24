@@ -7,6 +7,7 @@ import {initSubscriptions,createBillingHandler,assertQuota} from './billing-core
 import {initCampaignSandbox,campaignBalance,sandboxCampaignAllowed,createCampaignSandboxHandler,reviewSandboxSubmission} from './sandbox-campaigns.js';
 import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.js';
 import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
+import {startCpmWatchdog} from './cpm-watchdog.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -274,6 +275,7 @@ const billingHandler=createBillingHandler({db,requireUser,fail,json,send,now,id,
 const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,json,send,now,id,limit,broadcast});
 const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
 const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
+startCpmWatchdog({db,id,now,fail,broadcast});
 async function handle(req,res){
  const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('X-Permitted-Cross-Domain-Policies','none');res.setHeader('Origin-Agent-Cluster','?1');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
