@@ -29,5 +29,7 @@ jobs:
           node --check public/v6.js
           node --check public/v6.motion.js
           node --check public/security.js
+          node --check mfa.js
+          node --check public/mfa-ui.js
       - name: Real backend integration tests
         run: npm test
