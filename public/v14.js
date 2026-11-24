@@ -113,13 +113,21 @@ document.addEventListener('click',async ev=>{
 },true);
 document.addEventListener('input',ev=>{const f=ev.target.closest('#v14-form');if(f)updateEstimate(f);},true);
 document.addEventListener('submit',ev=>{if(ev.target.id==='v14-form'){ev.preventDefault();ev.stopImmediatePropagation();}},true);
-async function loadFeatured(force=false){if(V.busy||!force&&Date.now()-V.loaded<60000)return;V.busy=true;try{const x=await api('/promotions/featured');V.featured=x.items||[];V.loaded=Date.now();if(['discover','campaigns'].includes(S.page)&&!currentForm())render();}catch{V.loaded=Date.now();}finally{V.busy=false;}}
+async function loadFeatured(force=false){if(V.busy||!force&&Date.now()-V.loaded<60000)return;V.busy=true;try{const x=await api('/promotions/featured');V.featured=x.items||[];V.loaded=Date.now();if(['discover','campaigns'].includes(S.page)&&!document.querySelector('#overlay .modal'))render();}catch{V.loaded=Date.now();}finally{V.busy=false;}}
 function sponsored(items,title){if(!items.length)return '';const unique=[...new Map(items.map(x=>[x.id,x])).values()].slice(0,8);
  return '<section class="v14-sponsored"><div class="v14-section-title"><div><span class="v14-eyebrow">SPONSORED PLACEMENT · SANDBOX</span><h2>'+title+'</h2></div></div><div class="v14-feature-grid">'+unique.map(x=>'<div>'+previewHTML(x.title,x.headline||x.artist_name,x.icon_url,x.background_url,x.cpm_rate_cents,x.remaining_cents,true)+'<div class="v14-promo-bottom"><span>'+e(x.artist_name)+' · until '+e(new Date(x.ends_at).toLocaleDateString())+'</span><button type="button" data-v14-open="'+e(x.id)+'">View campaign '+icon('arrow',14)+'</button></div></div>').join('')+'</div></section>';
 }
-const oldDiscover=discover;discover=function(){return sponsored(V.featured.filter(x=>['home','creator','recommended','launch'].includes(x.placement)),'Featured campaigns')+oldDiscover();};
-const oldCampaigns=campaignsPage;campaignsPage=function(){return sponsored(V.featured.filter(x=>['spotlight','top','category','card','recommended','launch'].includes(x.placement)),'Promoted opportunities')+oldCampaigns();};
+const placement=(key,title)=>sponsored(V.featured.filter(x=>x.placement===key),title);
+const oldDiscover=discover;discover=function(){return placement('home','Featured campaigns')+oldDiscover()+placement('launch','New campaign launches')+placement('creator','Creator opportunities')+placement('recommended','Sponsored recommendations');};
+const oldCampaigns=campaignsPage;campaignsPage=function(){
+ const priority=new Set(V.featured.filter(x=>x.placement==='top').map(x=>x.id));
+ const original=S.campaigns;
+ let body;try{S.campaigns=[...original].sort((a,b)=>Number(priority.has(b.id))-Number(priority.has(a.id)));body=oldCampaigns();}finally{S.campaigns=original;}
+ const genres=[...new Set(V.featured.filter(x=>x.placement==='category').map(x=>x.genre))];
+ return placement('spotlight','Campaign spotlight')+placement('top','Sponsored top listings')+body+genres.map(g=>sponsored(V.featured.filter(x=>x.placement==='category'&&x.genre===g),esc(g)+' · Featured campaigns')).join('')+placement('recommended','Sponsored recommendations')+placement('launch','New launches');
+};
 const oldStudio=studioPage;studioPage=function(){const drafts=(S.myCampaigns||[]).filter(x=>x.branding&&['draft','awaiting_payment'].includes(x.status));return (drafts.length?'<section class="v14-resume-list"><h2>Continue campaign setup</h2>'+drafts.map(x=>'<button class="v14-resume" data-v14-resume="'+e(x.id)+'"><span>'+e(x.title)+'</span>Continue '+icon('arrow',14)+'</button>').join('')+'</section>':'')+oldStudio();};
-const oldCard=campaignCard;campaignCard=function(c){return oldCard(c.branding?.background_url?{...c,cover_url:c.branding.background_url}:c);};
+const oldCard=campaignCard;campaignCard=function(c){const html=oldCard(c.branding?.background_url?{...c,cover_url:c.branding.background_url}:c);return V.featured.some(x=>x.id===c.id&&x.placement==='card')?'<div class="v14-premium-wrap"><span class="v14-premium-tag">SPONSORED · TEST</span>'+html+'</div>':html;};
 const oldRender=render;render=function(){oldRender();if(['discover','campaigns'].includes(S.page))void loadFeatured();};
+setInterval(()=>{if(!document.hidden&&['discover','campaigns'].includes(S.page)&&!document.querySelector('#overlay .modal'))void loadFeatured(true);},60000);
 })();
