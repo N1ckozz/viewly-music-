@@ -370,3 +370,14 @@ button:disabled{opacity:.44!important;cursor:not-allowed!important;transform:non
  .v-home-top-v2 p{font-size:9px;max-width:204px}
  .v-home-top-v2 .v-home-actions .v-button{font-size:9px;padding:0 7px}
 }
+
+/* Account security and real moderation control room */
+.v-settings-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-top:20px}
+.v-admin-reports{display:grid;gap:9px;margin-top:18px}
+.v-report-entry{display:flex;align-items:center;gap:13px;justify-content:space-between;background:#212328;border:1px solid #3b3d46;border-radius:9px;padding:15px}
+.v-report-entry>div{min-width:0;flex:1}
+.v-report-entry b{display:block;font-size:13px;font-weight:750;color:#f1f2f5;margin:6px 0}
+.v-report-entry small{display:block;font:500 10px var(--mono)!important;text-transform:uppercase;color:#a2afd5;letter-spacing:.3px}
+.v-report-entry p{overflow-wrap:anywhere;font-size:11px;color:#b8bcc7;line-height:1.6;margin:0}
+.v-report-entry .v-button{flex:none}
+@media(max-width:700px){.v-settings-actions{display:flex;flex-direction:column;align-items:stretch}.v-settings-actions .v-button{width:100%}.v-report-entry{flex-direction:column;align-items:stretch}.v-report-entry .v-button{width:100%}}
