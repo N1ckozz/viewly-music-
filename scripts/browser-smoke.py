@@ -183,6 +183,10 @@ with sync_playwright() as p:
             ctx.add_init_script("""window.__v17RevealSeen=false;
                 new MutationObserver(()=>{if(document.querySelector('#app.v17-reveal')&&!window.__v17RevealSeen){window.__v17RevealSeen=true;document.documentElement.dataset.v17RevealSeen='true';}})
                     .observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});""")
+            ctx.add_init_script("""new MutationObserver(()=>{const l=document.querySelector('.v173-brand');if(!l)return;
+                if(l.dataset.phase==='0')document.documentElement.dataset.brandVSeen='true';
+                if(l.dataset.phase==='1')document.documentElement.dataset.brandWordSeen='true';
+            }).observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['data-phase']});""")
             if fallback:
                 ctx.add_init_script("const get=HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl'?null:get.call(this,type,...args)}")
             page=ctx.new_page()
@@ -193,6 +197,10 @@ with sync_playwright() as p:
                 page.goto(base,wait_until='domcontentloaded')
                 intro=page.locator('#app-loader.v17-intro')
                 expect(intro).to_be_visible(timeout=5000)
+                expect(intro.locator('.v173-monogram')).to_be_visible()
+                expect(intro.locator('.v173-word')).to_have_text('IEWLY')
+                expect(intro.locator('.v17-stage-frame,.v17-grain,.v17-intro-chapters')).to_have_count(0)
+                expect(page.locator('html')).to_have_attribute('data-brand-v-seen','true')
                 expect(intro.locator('[data-intro-skip]')).to_be_visible()
                 expect(page.locator('#app')).to_have_attribute('inert','')
                 expect(intro).to_have_attribute('data-ready','true',timeout=8000)
@@ -210,6 +218,8 @@ with sync_playwright() as p:
                     intro.locator('[data-intro-skip]').click()
                 else:
                     expect(intro).to_have_attribute('data-phase','2',timeout=5000)
+                    expect(page.locator('html')).to_have_attribute('data-brand-word-seen','true')
+                    assert intro.locator('.v173-word').evaluate('(el)=>el.clientWidth>=el.firstElementChild.scrollWidth-1'), 'Wordmark is clipped'
                     page.screenshot(path=str(out/f'{name}-intro.png'))
                 expect(page.locator('html')).to_have_attribute('data-v17-reveal-seen','true',timeout=8000)
                 expect(page.locator('#app')).not_to_have_attribute('inert','')
