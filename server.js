@@ -5,6 +5,8 @@ import {initAdmin,siteSettings,createAdminHandler} from './admin-core.js';
 import {initializeAuthMail,createMailHandler} from './auth-mail.js';
 import {initSubscriptions,createBillingHandler,assertQuota} from './billing-core.js';
 import {initCampaignSandbox,campaignBalance,sandboxCampaignAllowed,createCampaignSandboxHandler,reviewSandboxSubmission} from './sandbox-campaigns.js';
+import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.js';
+import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -50,6 +52,8 @@ initAdmin(db);
 initializeAuthMail(db);
 initSubscriptions(db);
 initCampaignSandbox(db);
+initSocial(db);
+initCreatorCampaigns(db);
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -82,7 +86,7 @@ const MAX_JSON=64*1024,MAX_UPLOAD=80*1024*1024;
 let uploadsInProgress=0,clipJobsInProgress=0;
 const MAX_CONCURRENT_UPLOADS=1,MAX_CONCURRENT_CLIPS=2;
 const mimeExt={'video/mp4':'.mp4','video/webm':'.webm','video/quicktime':'.mov','image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'};
-const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.ico':'image/x-icon','.woff2':'font/woff2'};
+const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.mp3':'audio/mpeg','.wav':'audio/wav','.pdf':'application/pdf','.ico':'image/x-icon','.woff2':'font/woff2'};
 const statements={
   getUser:db.prepare('SELECT id,email,username,display_name,role,bio,created_at,status,email_verified FROM users WHERE id=?'),
   byEmail:db.prepare('SELECT * FROM users WHERE email=?'),
@@ -268,11 +272,14 @@ const adminHandler=createAdminHandler({db,requireUser,fail,json,send,now,id,broa
 const mailHandler=createMailHandler({db,requireUser,fail,send,json,limit,limitAccount,hashPassword,now,sha});
 const billingHandler=createBillingHandler({db,requireUser,fail,json,send,now,id,limit,broadcast});
 const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,json,send,now,id,limit,broadcast});
+const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
+const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
 async function handle(req,res){
  const url=new URL(req.url,'http://localhost');const pathname=url.pathname;res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('X-Permitted-Cross-Domain-Policies','none');res.setHeader('Origin-Agent-Cluster','?1');res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'");if(APP_URL.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=15552000; includeSubDomains');requireSameOrigin(req);
  if(pathname==='/api/stripe/webhook'&&req.method==='POST')return stripeWebhook(req,res);
  if(pathname==='/auth/google'&&req.method==='GET')return googleStart(req,res);
  if(pathname==='/auth/google/callback'&&req.method==='GET')return googleCallback(req,res,url);
+ if(pathname.startsWith('/connect/tiktok')||pathname.startsWith('/connect/spotify'))return socialHandler(req,res,url);
  if(pathname.startsWith('/media/')&&req.method==='GET'){
   const name=pathname.slice(7);
   if(!/^[a-f0-9]{40}\.(mp4|webm|mov|jpg|png|webp)$/.test(name))throw fail(404,'File not found.');
@@ -291,11 +298,13 @@ async function handle(req,res){
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
+ if(pathname.startsWith('/api/social/'))return socialHandler(req,res,url);
+ if(pathname==='/api/campaigns/v10'||/^\/api\/campaigns\/[a-f0-9-]{36}\/(?:v10|assets(?:\/[a-f0-9-]{36})?|pause|resume|cpm-submissions)$/.test(pathname)||/^\/api\/cpm-submissions\/[a-f0-9-]{36}(?:\/(?:review|refresh|settle|appeal))?$/.test(pathname))return creatorCampaignHandler(req,res,url);
  if(pathname.startsWith('/api/auth/'))return mailHandler(req,res,pathname);
  if(pathname.startsWith('/api/billing/'))return billingHandler(req,res,url);
  if(pathname==='/api/sandbox/rewards'||/^\/api\/campaigns\/[a-f0-9-]{36}\/sandbox-fund$/.test(pathname))return sandboxCampaignHandler(req,res,pathname);
  if(pathname.startsWith('/api/admin/'))return adminHandler(req,res,url);
- if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,billing_sandbox_enabled:process.env.VIEWLY_BILLING_MODE==='sandbox'&&process.env.VIEWLY_BILLING_SANDBOX_ALLOWED==='true',google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
+ if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,billing_sandbox_enabled:process.env.VIEWLY_BILLING_MODE==='sandbox'&&process.env.VIEWLY_BILLING_SANDBOX_ALLOWED==='true',google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,tiktok_connection_ready:socialAvailability().tiktok,spotify_connection_ready:socialAvailability().spotify,cpm_campaigns:true,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
 
  const artistMatch=pathname.match(/^\/api\/artists\/([a-f0-9-]{36})(?:\/(follow))?$/);
  if(artistMatch){
