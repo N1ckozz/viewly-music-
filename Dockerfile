@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json server.js mfa.js ./
 COPY public ./public
 COPY tests ./tests
-RUN node --test tests/*.test.js
+RUN node --test --test-concurrency=2 tests/*.test.js
 RUN mkdir -p /app/data /app/uploads && chown -R node:node /app
 USER node
 ENV NODE_ENV=production PORT=4179 VIEWLY_DATA_DIR=/app/data VIEWLY_UPLOAD_DIR=/app/uploads

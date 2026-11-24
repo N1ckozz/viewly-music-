@@ -1,6 +1,5 @@
 /* VIEWLY V4 / A deliberate editorial music product, not a generic glowing SaaS template.
    License-safe Google Fonts; no copied third-party art, no fake content. */
-@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;450;500;550;600;650;700;750;800&family=Unbounded:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root{
   --bg:#0c0d0f;--panel:#151619;--panel2:#1c1e22;--panel3:#24262b;
   --line:#2b2d32;--line2:#383a40;--fg:#ededee;--muted:#a9aaaf;--dim:#73767e;
