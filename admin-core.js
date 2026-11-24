@@ -1,3 +1,4 @@
+import {catalog} from './promotions-core.js';
 /* Viewly Admin Control Plane: all actions audited and secured server-side.
    Never adjusts verified funding, balances or payouts. */
 const short=(v,max=500)=>String(v??'').trim().slice(0,max);
@@ -63,6 +64,15 @@ export function createAdminHandler({db,requireUser,fail,json,send,now,id,broadca
   const path=url.pathname;
   if(!path.startsWith('/api/admin/'))return false;
   const verb=req.method,admin=authorized(req,verb!=='GET');
+  if(path==='/api/admin/promotions'&&verb==='GET')return send(res,200,{products:catalog(db)});
+  if(path==='/api/admin/promotions'&&verb==='PATCH'){
+   const b=await json(req),before=db.prepare('SELECT * FROM promo_products WHERE id=?').get(String(b.id||''));
+   if(!before)throw fail(404,'Promotion not found.');
+   const price=b.price_cents,hours=b.hours,capacity=b.capacity,enabled=b.enabled;
+   if(!Number.isSafeInteger(price)||price<0||price>1000000||!Number.isSafeInteger(hours)||hours<(before.placement==='package'?0:1)||hours>720||!Number.isSafeInteger(capacity)||capacity<(before.placement==='package'?0:1)||capacity>10000||typeof enabled!=='boolean')throw fail(422,'Invalid promotion terms.');
+   transaction(()=>{db.prepare('UPDATE promo_products SET price_cents=?,hours=?,capacity=?,enabled=? WHERE id=?').run(price,before.placement==='package'?0:hours,before.placement==='package'?0:capacity,enabled?1:0,before.id);log(admin,'promo.update','promotion',before.id,before,db.prepare('SELECT * FROM promo_products WHERE id=?').get(before.id));});
+   broadcast('promo-settings');return send(res,200,{products:catalog(db)});
+  }
   const q='%'+short(url.searchParams.get('q')||'',90)+'%';
   const offset=Math.max(0,Math.min(10000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
   if(path==='/api/admin/overview'&&verb==='GET'){
