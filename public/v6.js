@@ -132,7 +132,7 @@ document.addEventListener('click',e=>{
  const platform=e.target.closest('[data-v6-platform]');
  if(platform){M.platform=platform.dataset.v6Platform;render();return}
  const scope=e.target.closest('[data-v6-scope]');
- if(scope){M.scope=scope.dataset.v6Scope;M.platform='All';M.query='';render();return}
+ if(scope){if(scope.dataset.v6Scope==='mine'&&!S.user){e.preventDefault();e.stopPropagation();authModal('login');return}M.scope=scope.dataset.v6Scope;M.platform='All';M.query='';render();return}
  const reset=e.target.closest('[data-v6-reset]');
  if(reset){M.query='';M.platform='All';render();return}
  const submissions=e.target.closest('[data-v6-submissions]');
