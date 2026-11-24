@@ -253,3 +253,40 @@ body:before{background:radial-gradient(ellipse 65% 26% at 92% -10%,#6981f021,tra
  *,*:before,*:after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
  .v-bottom-nav .v-nav.is-active{transform:none}
 }
+
+/* V5.1 functional affordances and correct overlay stacking on mobile */
+.v5-search-row{display:flex;align-items:center;gap:16px;margin:0 0 22px;min-width:0}
+.v5-search-bar{
+ flex:1;display:flex;align-items:center;gap:12px;min-height:52px;min-width:0;text-align:left;
+ padding:0 16px;border-radius:14px;color:#cad5f4!important;font-size:12px;font-weight:620;
+ border:1px solid #afc4ff4a!important;
+ background:linear-gradient(135deg,#bdcbff21,#5f75cf13)!important;
+ box-shadow:inset 0 1px #ffffff2d,0 8px 24px #0004!important;
+ backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+ transition:border-color .17s,transform .17s,background .17s
+}
+.v5-search-bar:hover{border-color:#c8d5ff91!important;background:#a9bfff30!important;transform:translateY(-1px)}
+.v5-search-bar:focus-visible{outline:2px solid #c5d6ff;outline-offset:3px}
+.v5-search-bar svg{color:#aec0ff;flex:none}
+.v5-search-bar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v5-search-bar kbd{padding:5px 8px;font:550 10px var(--mono);color:#aebfff;background:#bdc8ff13;border:1px solid #a5b8ff2f;border-radius:6px;white-space:nowrap}
+.v5-on-air{color:#91a1bf;font:600 10px var(--mono);white-space:nowrap;display:flex;align-items:center;gap:8px}
+.v5-on-air i{width:7px;height:7px;background:#86ddbe;border-radius:50%;box-shadow:0 0 10px #69d9af64}
+#overlay-root{position:relative;z-index:260!important}
+#overlay-root .overlay{z-index:260!important}
+#ux-palette,.x-palette-overlay{z-index:270!important}
+#toast-root{z-index:300!important}
+body:has(#overlay) .v-bottom-nav{pointer-events:none;opacity:.25;filter:blur(2px)}
+.v-payment-state .v-button{margin-top:13px}
+.v-account-grid button svg:last-child{margin-left:auto;opacity:.65}
+.v5-search-bar:active{transform:scale(.995)}
+@media(max-width:700px){
+ .v5-search-row{margin-bottom:15px}
+ .v5-search-bar{min-height:44px;padding:0 13px;gap:9px;border-radius:11px}
+ .v5-search-bar span{font-size:10px}
+ .v5-search-bar kbd,.v5-on-air{display:none}
+ .v-campaign-card,.v-release,.v-kpi,.v-home-tool,.v-no-data,.v-operation-panel,
+ .v-settings-panel,.v-settings-nav,.x-clip-item,.x-metric{
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important
+ }
+}
