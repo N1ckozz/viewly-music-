@@ -1,0 +1,68 @@
+import {isSandboxBilling} from './billing-core.js';
+const uuid=/^[a-f0-9-]{36}$/;
+const R="r.visibility='public' AND u.status='active'";
+const C="c.moderation_status='visible' AND r.visibility='public' AND u.status='active' AND r.owner_id=c.owner_id";
+const funded=()=>"(c.status='active' AND c.paid_cents>c.spent_cents"+(isSandboxBilling()?" OR c.status='sandbox_active' AND c.sandbox_funded_cents>c.sandbox_spent_cents":"")+")";
+const releases="SELECT r.id,r.owner_id,r.title,r.genre,r.created_at,u.display_name AS artist_name,u.username AS artist_username,r.cover_name,r.file_name,(SELECT count(*) FROM release_likes l WHERE l.release_id=r.id) AS likes,(SELECT count(*) FROM release_views v WHERE v.release_id=r.id) AS plays FROM releases r JOIN users u ON u.id=r.owner_id WHERE "+R;
+const campaigns="SELECT c.id,c.owner_id,c.title,c.release_id,c.created_at,c.status,c.pricing_model,c.cpm_rate_cents,c.reward_cents,c.paid_cents,c.spent_cents,c.sandbox_funded_cents,c.sandbox_spent_cents,u.display_name AS artist_name,r.cover_name,r.genre,b.icon_file,b.background_file FROM campaigns c JOIN users u ON u.id=c.owner_id JOIN releases r ON r.id=c.release_id LEFT JOIN campaign_branding b ON b.campaign_id=c.id WHERE "+C;
+const artists="SELECT u.id,u.username,u.display_name,u.role,u.bio, (SELECT count(*) FROM artist_follows f JOIN users a ON a.id=f.follower_id WHERE f.artist_id=u.id AND a.status='active') AS followers,(SELECT count(*) FROM releases r WHERE r.owner_id=u.id AND r.visibility='public') AS releases FROM users u WHERE u.status='active' AND u.role IN ('artist','label','admin') AND EXISTS(SELECT 1 FROM releases r WHERE r.owner_id=u.id AND r.visibility='public')";
+const mapRelease=({cover_name,file_name,...r})=>({...r,cover_url:cover_name?'/media/'+cover_name:null,video_url:'/media/'+file_name});
+const mapCampaign=({cover_name,icon_file,background_file,...c})=>{const test=c.status==='sandbox_active';return {...c,sandbox:test,funded_cents:test?c.sandbox_funded_cents:c.paid_cents,remaining_cents:Math.max(0,test?c.sandbox_funded_cents-c.sandbox_spent_cents:c.paid_cents-c.spent_cents),cover_url:background_file?'/api/promotions/'+c.id+'/image/background':cover_name?'/media/'+cover_name:null,icon_url:icon_file?'/api/promotions/'+c.id+'/image/icon':null}};
+const all=(db,sql,...args)=>db.prepare(sql).all(...args);
+const one=(db,sql,...args)=>db.prepare(sql).get(...args);
+export function initEcosystem(db){
+ db.exec("CREATE TABLE IF NOT EXISTS ecosystem_saves(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,kind TEXT NOT NULL CHECK(kind IN ('release','campaign')),target_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(user_id,kind,target_id)); CREATE TABLE IF NOT EXISTS ecosystem_rank_optin(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,enabled INTEGER NOT NULL CHECK(enabled IN(0,1))); CREATE TABLE IF NOT EXISTS ecosystem_invites(id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL REFERENCES campaigns(id),artist_id TEXT NOT NULL REFERENCES users(id),recipient_id TEXT NOT NULL REFERENCES users(id),created_at TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','accepted','declined')),UNIQUE(campaign_id,recipient_id)); CREATE TABLE IF NOT EXISTS ecosystem_read(user_id TEXT PRIMARY KEY REFERENCES users(id),seen_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS ecosystem_invite_recipient ON ecosystem_invites(recipient_id,created_at);");
+}
+export function ranking(db,days=7,cid=null,at=Date.now()){
+ const start=days===0?'1970-01-01':new Date(at-days*86400000).toISOString();
+ // Counts only approved, currently visible and unflagged submissions; period is approval date, not view date.
+ return all(db,"SELECT u.id,u.display_name,u.username,COUNT(*) AS approved_clips,COALESCE(SUM(s.reported_views),0) AS reported_views FROM cpm_submissions s JOIN users u ON u.id=s.clipper_id JOIN ecosystem_rank_optin o ON o.user_id=u.id AND o.enabled=1 JOIN campaigns c ON c.id=s.campaign_id JOIN releases r ON r.id=c.release_id JOIN users owner ON owner.id=c.owner_id WHERE u.status='active' AND owner.status='active' AND r.visibility='public' AND c.moderation_status='visible' AND "+(isSandboxBilling()?"c.status IN ('active','sandbox_active','sandbox_completed','sandbox_paused')":"c.status='active'")+" AND s.review_status='approved' AND s.post_access='visible' AND s.risk_flag='' AND s.last_checked_at IS NOT NULL AND s.reviewed_at>=? AND (? IS NULL OR c.id=?) GROUP BY u.id ORDER BY approved_clips DESC,reported_views DESC,u.id LIMIT 50",start,cid,cid);
+}
+export function ecosystemHome(db,actor){
+ const latest=all(db,releases+' ORDER BY r.created_at DESC LIMIT 16').map(mapRelease);
+ const active=all(db,campaigns+' AND '+funded()+' ORDER BY c.created_at DESC LIMIT 16').map(mapCampaign);
+ const people=all(db,artists+' ORDER BY followers DESC,releases DESC,u.id LIMIT 12');
+ const news=[...latest.map(r=>({kind:'release',id:r.id,title:r.title,artist:r.artist_name,at:r.created_at})),...active.map(c=>({kind:'campaign',id:c.id,title:c.title,artist:c.artist_name,at:c.created_at,sandbox:c.sandbox}))].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,12);
+ let personal=null;
+ if(actor){
+  const saved=all(db,"SELECT kind,target_id FROM ecosystem_saves WHERE user_id=? ORDER BY created_at DESC LIMIT 200",actor.id);
+  const following=all(db,"SELECT artist_id FROM artist_follows WHERE follower_id=?",actor.id).map(x=>x.artist_id);
+  personal={account_id:actor.id,saved,following,rank_optin:!!one(db,'SELECT enabled FROM ecosystem_rank_optin WHERE user_id=?',actor.id)?.enabled,
+    recommended:all(db,releases+" AND EXISTS(SELECT 1 FROM artist_follows f WHERE f.artist_id=r.owner_id AND f.follower_id=?) ORDER BY r.created_at DESC LIMIT 12",actor.id).map(mapRelease)};
+ }
+ return {latest,active,artists:people,news,leaders:ranking(db),personal};
+}
+function notices(db,actor){
+ const inv=all(db,"SELECT i.id,i.state,i.created_at,c.id AS campaign_id,c.title,u.display_name AS artist_name FROM ecosystem_invites i JOIN campaigns c ON c.id=i.campaign_id JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.owner_id WHERE i.recipient_id=? AND "+C+" AND "+funded()+" ORDER BY i.created_at DESC LIMIT 30",actor.id);
+ const reviews=all(db,"SELECT s.submission_id AS id,s.review_status AS state,s.reviewed_at AS created_at,c.title,c.id AS campaign_id FROM cpm_submissions s JOIN campaigns c ON c.id=s.campaign_id WHERE s.clipper_id=? AND s.reviewed_at IS NOT NULL ORDER BY s.reviewed_at DESC LIMIT 30",actor.id);
+ const follow=all(db,"SELECT r.id,r.title,r.created_at,u.display_name AS artist_name FROM releases r JOIN users u ON u.id=r.owner_id JOIN artist_follows f ON f.artist_id=u.id WHERE "+R+" AND f.follower_id=? ORDER BY r.created_at DESC LIMIT 25",actor.id);
+ const watched=all(db,"SELECT c.id,c.title,c.created_at,c.status,c.sandbox_funded_cents,c.sandbox_spent_cents,c.paid_cents,c.spent_cents FROM ecosystem_saves s JOIN campaigns c ON s.target_id=c.id JOIN releases r ON r.id=c.release_id JOIN users u ON u.id=c.owner_id WHERE s.user_id=? AND s.kind='campaign' AND "+C+" AND "+funded()+" ORDER BY c.created_at DESC LIMIT 30",actor.id).map(c=>({...c,remaining_cents:c.status==='sandbox_active'?c.sandbox_funded_cents-c.sandbox_spent_cents:c.paid_cents-c.spent_cents}));
+ return {account_id:actor.id,invites:inv,reviews,followed_releases:follow,watched,seen_at:one(db,'SELECT seen_at FROM ecosystem_read WHERE user_id=?',actor.id)?.seen_at||''};
+}
+export function createEcosystemHandler({db,sessionUser,requireUser,requireCreator,fail,json,send,now,id,limit,broadcast}){
+ const visibleCampaign=cid=>one(db,campaigns+' AND '+funded()+' AND c.id=?',cid);
+ const visibleRelease=rid=>one(db,releases+' AND r.id=?',rid);
+ return async(req,res,url)=>{
+  const p=url.pathname.slice('/api/ecosystem/'.length),method=req.method,actor=sessionUser(req);
+  if(method==='GET'){
+   limit(req,'eco-read',100,60000);
+   if(p==='home')return send(res,200,ecosystemHome(db,actor));
+   if(p==='rank'){const days=Number(url.searchParams.get('days')??7),cid=url.searchParams.get('campaign');if(![0,7,30].includes(days)||cid&&!uuid.test(cid))throw fail(422,'Invalid ranking period.');if(cid&&!visibleCampaign(cid)&&!one(db,'SELECT 1 FROM campaigns WHERE id=? AND owner_id=?',cid,actor?.id||''))throw fail(404,'Campaign unavailable.');return send(res,200,{rows:ranking(db,days,cid),days,methodology:'Approved clips by approval date; latest provider-reported views are not fraud-certified or cash rewards.'});}
+   if(p==='search'){const q=(url.searchParams.get('q')||'').trim().slice(0,80);if(q.length<2)return send(res,200,{releases:[],campaigns:[],artists:[]});return send(res,200,{releases:all(db,releases+" AND (instr(lower(r.title),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0) ORDER BY r.created_at DESC LIMIT 15",q,q).map(mapRelease),campaigns:all(db,campaigns+' AND '+funded()+" AND (instr(lower(c.title),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0) ORDER BY c.created_at DESC LIMIT 15",q,q).map(mapCampaign),artists:all(db,artists+" AND (instr(lower(u.display_name),lower(?))>0 OR instr(lower(u.username),lower(?))>0) ORDER BY followers DESC LIMIT 15",q,q)});}
+   if(p==='saved'){const u=requireUser(req);return send(res,200,{account_id:u.id,releases:all(db,releases+" AND EXISTS(SELECT 1 FROM ecosystem_saves s WHERE s.user_id=? AND s.kind='release' AND s.target_id=r.id) ORDER BY r.created_at DESC LIMIT 100",u.id).map(mapRelease),campaigns:all(db,campaigns+' AND '+funded()+" AND EXISTS(SELECT 1 FROM ecosystem_saves s WHERE s.user_id=? AND s.kind='campaign' AND s.target_id=c.id) ORDER BY c.created_at DESC LIMIT 100",u.id).map(mapCampaign)});}
+   if(p==='notifications')return send(res,200,notices(db,requireUser(req)));
+   if(p==='community'){return send(res,200,{threads:all(db,releases+" AND EXISTS(SELECT 1 FROM release_comments co JOIN users cu ON cu.id=co.user_id WHERE co.release_id=r.id AND cu.status='active') ORDER BY (SELECT MAX(created_at) FROM release_comments WHERE release_id=r.id) DESC LIMIT 24").map(mapRelease)});}
+   const m=p.match(/^artist\/([a-f0-9-]{36})$/);
+   if(m){const person=one(db,artists+' AND u.id=?',m[1]);if(!person)throw fail(404,'Artist unavailable.');return send(res,200,{artist:person,releases:all(db,releases+' AND r.owner_id=? ORDER BY r.created_at DESC LIMIT 60',m[1]).map(mapRelease),campaigns:all(db,campaigns+' AND '+funded()+' AND c.owner_id=? ORDER BY c.created_at DESC LIMIT 40',m[1]).map(mapCampaign),following:!!(actor&&one(db,'SELECT 1 FROM artist_follows WHERE follower_id=? AND artist_id=?',actor.id,m[1]))});}
+  }
+  if(method==='POST'){
+   const u=requireUser(req);limit(req,'eco-write',30,60000);const b=await json(req);
+   if(p==='save'){if(!['release','campaign'].includes(b.kind)||!uuid.test(b.id)||typeof b.saved!=='boolean')throw fail(422,'Invalid save request.');if(b.saved){if(!(b.kind==='release'?visibleRelease(b.id):visibleCampaign(b.id)))throw fail(404,'Content unavailable.');if(one(db,'SELECT count(*) AS n FROM ecosystem_saves WHERE user_id=?',u.id).n>=200&&!one(db,'SELECT 1 FROM ecosystem_saves WHERE user_id=? AND kind=? AND target_id=?',u.id,b.kind,b.id))throw fail(409,'Saved list limit reached.');db.prepare('INSERT OR IGNORE INTO ecosystem_saves VALUES(?,?,?,?)').run(u.id,b.kind,b.id,now());}else db.prepare('DELETE FROM ecosystem_saves WHERE user_id=? AND kind=? AND target_id=?').run(u.id,b.kind,b.id);return send(res,200,{saved:b.saved});}
+   if(p==='ranking-preference'){if(typeof b.enabled!=='boolean')throw fail(422,'Choose a valid privacy preference.');db.prepare('INSERT INTO ecosystem_rank_optin VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled').run(u.id,b.enabled?1:0);return send(res,200,{enabled:b.enabled});}
+   if(p==='read'){db.prepare('INSERT INTO ecosystem_read VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET seen_at=excluded.seen_at').run(u.id,now());return send(res,200,{ok:true});}
+   if(p==='invite'){requireCreator(req);if(!uuid.test(b.campaign_id)||typeof b.username!=='string'||! /^[a-zA-Z0-9_]{3,24}$/.test(b.username))throw fail(422,'Use a valid campaign and username.');const c=visibleCampaign(b.campaign_id);if(!c||c.owner_id!==u.id)throw fail(404,'Your active campaign was not found.');const target=one(db,"SELECT id FROM users WHERE username=? COLLATE NOCASE AND status='active' AND id<>?",b.username,u.id);if(!target)throw fail(404,'Recipient unavailable.');if(one(db,'SELECT count(*) AS n FROM ecosystem_invites WHERE artist_id=? AND created_at>?',u.id,new Date(Date.now()-86400000).toISOString()).n>=20)throw fail(429,'Daily invitation limit reached.');db.prepare("INSERT OR IGNORE INTO ecosystem_invites(id,campaign_id,artist_id,recipient_id,created_at) VALUES(?,?,?,?,?)").run(id(),c.id,u.id,target.id,now());return send(res,200,{ok:true,note:'Invitation recorded; all existing campaign entry requirements still apply.'});}
+   if(p==='respond'){if(!uuid.test(b.id)||!['accepted','declined'].includes(b.state))throw fail(422,'Invalid response.');const i=one(db,"SELECT * FROM ecosystem_invites WHERE id=? AND recipient_id=? AND state='pending'",b.id,u.id);if(!i||!visibleCampaign(i.campaign_id))throw fail(404,'Invitation unavailable.');db.prepare("UPDATE ecosystem_invites SET state=? WHERE id=? AND recipient_id=? AND state='pending'").run(b.state,i.id,u.id);return send(res,200,{ok:true,campaign_id:i.campaign_id});}
+  }
+  throw fail(404,'Ecosystem route unavailable.');
+ };
+}
