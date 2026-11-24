@@ -18,6 +18,20 @@ with sync_playwright() as p:
             expect(page.locator('.v-app-shell > .v-workspace')).to_be_visible()
             page.locator('#app-loader').wait_for(state='hidden',timeout=15000)
             assert page.request.get(base+'/api/health').ok
+            if page.locator('.v13-hub').count():
+                expect(page.locator('.v13-status')).to_contain_text('Live database',timeout=15000)
+                expect(page.locator('.v13-metrics .v13-metric')).to_have_count(4)
+                expect(page.locator('.v13-chart .v13-bar-slot')).to_have_count(7)
+                page.locator('[data-v13-period="30"]').click()
+                expect(page.locator('.v13-chart .v13-bar-slot')).to_have_count(30,timeout=15000)
+                expect(page.locator('[data-v13-period="30"]')).to_have_attribute('aria-pressed','true')
+                result=page.request.get(base+'/api/workspace?days=30')
+                assert result.ok and result.json()['personal'] is None
+                assert page.request.get(base+'/api/workspace?days=15').status==422
+                page.locator('[data-v13-period="7"]').click()
+                expect(page.locator('.v13-chart .v13-bar-slot')).to_have_count(7,timeout=15000)
+            elif '127.0.0.1' in base:
+                raise AssertionError('V13 creator hub missing from local build')
             page.screenshot(path=str(out/f'{name}-home.png'),full_page=True,animations='disabled')
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2'), 'Horizontal document overflow'
             if name=='desktop':
