@@ -38,6 +38,28 @@ CREATE INDEX IF NOT EXISTS idx_submissions_campaign ON submissions(campaign_id,c
 db.exec(`CREATE TABLE IF NOT EXISTS artist_follows(follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,artist_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,created_at TEXT NOT NULL,PRIMARY KEY(follower_id,artist_id));
 CREATE INDEX IF NOT EXISTS idx_artist_follows_artist ON artist_follows(artist_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS content_reports(id TEXT PRIMARY KEY,release_id TEXT NOT NULL REFERENCES releases(id),reporter_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(release_id,reporter_id));`);
+
+/* Production storage gate. A path alone is not persistence: require a mounted filesystem.
+   The staging site intentionally stays operational without a volume, but can never claim readiness. */
+const PERSISTENCE_ROOT=path.resolve(process.env.VIEWLY_PERSISTENCE_MOUNT||'/persistent');
+function persistenceMounted(){
+ try{
+  const mounts=fs.readFileSync('/proc/self/mountinfo','utf8').split('\n');
+  const root=PERSISTENCE_ROOT.replaceAll('\\040',' ');
+  return mounts.some(line=>{
+   const fields=line.split(' '),mountPoint=fields[4]?.replaceAll('\\040',' ');
+   return mountPoint===root || (mountPoint && root.startsWith(mountPoint+'/') && mountPoint!=='/');
+  });
+ }catch{return false;}
+}
+function storageStatus(){
+ const mounted=persistenceMounted(),insideRoot=(p)=>p===PERSISTENCE_ROOT||p.startsWith(PERSISTENCE_ROOT+path.sep);
+ return {durable:mounted&&insideRoot(DATA)&&insideRoot(UPLOADS),mounted,database_path_inside_mount:insideRoot(DATA),uploads_path_inside_mount:insideRoot(UPLOADS)};
+}
+if(process.env.VIEWLY_REQUIRE_PERSISTENCE==='true'&&!storageStatus().durable){
+ throw new Error('Production startup blocked: attach a real volume at VIEWLY_PERSISTENCE_MOUNT and place VIEWLY_DATA_DIR and VIEWLY_UPLOAD_DIR below it.');
+}
+
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -169,6 +191,41 @@ async function handle(req,res){
   const user=requireUser(req);if(user.role!=='admin')throw fail(403,'Administrator access required.');
   const reports=db.prepare('SELECT x.id,x.reason,x.details,x.created_at,x.release_id,r.title AS release_title,u.username AS reporter FROM content_reports x JOIN releases r ON r.id=x.release_id JOIN users u ON u.id=x.reporter_id ORDER BY x.created_at DESC LIMIT 100').all();
   return send(res,200,{reports});
+ }
+
+ if(pathname==='/api/account/export'&&req.method==='GET'){
+  const actor=requireUser(req);
+  limit(req,'data-export',4,3600000);
+  const profile=db.prepare('SELECT id,email,username,display_name,role,bio,created_at FROM users WHERE id=?').get(actor.id);
+  const releases=db.prepare('SELECT id,title,description,genre,file_name,cover_name,created_at FROM releases WHERE owner_id=? ORDER BY created_at').all(actor.id);
+  const comments=db.prepare('SELECT id,release_id,body,created_at FROM release_comments WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const likes=db.prepare('SELECT release_id FROM release_likes WHERE user_id=?').all(actor.id);
+  const follows=db.prepare('SELECT artist_id,created_at FROM artist_follows WHERE follower_id=?').all(actor.id);
+  const campaigns=db.prepare('SELECT id,release_id,title,brief,platform,reward_cents,budget_cents,fee_cents,status,created_at FROM campaigns WHERE owner_id=? ORDER BY created_at').all(actor.id);
+  const clips=db.prepare('SELECT id,release_id,file_name,start_sec,end_sec,created_at FROM clips WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const submissions=db.prepare('SELECT id,campaign_id,clip_id,post_url,status,created_at,reviewed_at FROM submissions WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const ledger=db.prepare('SELECT id,campaign_id,submission_id,type,amount_cents,created_at FROM wallet_ledger WHERE user_id=? ORDER BY created_at').all(actor.id);
+  const reports=db.prepare('SELECT id,release_id,reason,details,created_at FROM content_reports WHERE reporter_id=? ORDER BY created_at').all(actor.id);
+  res.setHeader('Content-Disposition','attachment; filename="viewly-account-export.json"');
+  return send(res,200,{exported_at:now(),format_version:1,account:profile,releases,comments,likes,follows,campaigns,clips,submissions,ledger,reports,note:'This archive contains account metadata, not the original large media files. Download your media separately.'});
+ }
+ if(pathname==='/api/account/sessions'&&req.method==='GET'){
+  const actor=requireUser(req);
+  return send(res,200,{active_session_count:db.prepare('SELECT count(*) AS n FROM sessions WHERE user_id=? AND expires_at>?').get(actor.id,Date.now()).n});
+ }
+ if(pathname==='/api/account/revoke-other-sessions'&&req.method==='POST'){
+  const actor=requireUser(req);
+  limit(req,'security',5,3600000);
+  const b=await json(req),userRow=db.prepare('SELECT password_hash FROM users WHERE id=?').get(actor.id);
+  if(!userRow.password_hash)throw fail(409,'Re-authentication for connected sign-in providers is not configured. Use the provider to secure your account.');
+  if(!validPassword(String(b.password||''),userRow.password_hash))throw fail(403,'Current password does not match.');
+  const token=cookieValue(req,'viewly_session');
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(actor.id,sha(token));
+  return send(res,200,{ok:true,remaining_sessions:1});
+ }
+ if(pathname==='/api/launch/readiness'&&req.method==='GET'){
+  const storage=storageStatus();
+  return send(res,storage.durable?200:503,{status:storage.durable?'storage_ready':'blocked',storage,paid_campaigns_enabled:PAYMENT_LAUNCH_ENABLED,payouts_operational:PAYOUT_PROVIDER_IMPLEMENTED,external_social_verification:false,commercial_launch_ready:false,reason:'Commercial operations require verified payouts, social metrics, legal review and moderation, not just persistent storage.'});
  }
  if(req.method==='GET'&&pathname==='/api/me'){const u=sessionUser(req);return send(res,200,{user:u,stats:statsFor(u)});}
  if(pathname==='/api/register'&&req.method==='POST'){
