@@ -26,4 +26,10 @@ fi
 mkdir -p "$DATA_DIR" "$UPLOAD_DIR"
 chown -R node:node "$DATA_DIR" "$UPLOAD_DIR"
 chmod 700 "$DATA_DIR" "$UPLOAD_DIR"
+if [ "${VIEWLY_BACKUPS_ENABLED:-false}" = "true" ]; then
+ for value in "${VIEWLY_BACKUP_ENDPOINT:-}" "${VIEWLY_BACKUP_BUCKET:-}" "${VIEWLY_BACKUP_ACCESS_KEY:-}" "${VIEWLY_BACKUP_SECRET_KEY:-}"; do
+  if [ -z "$value" ]; then echo "VIEWLY backup configuration incomplete" >&2; exit 1; fi
+ done
+ gosu node python3 /app/scripts/backup.py loop &
+fi
 exec gosu node "$@"
