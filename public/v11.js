@@ -18,7 +18,7 @@ function metric(label,value,foot,type){
 function track(b,compact=false){
  const funded=Number(b.funded_cents)||0,allocated=Number(b.allocated_cents)||0,available=Number(b.available_cents)||0;
  const pieces=[
-  {key:'pending',label:'CPM on hold',amt:b.pending_cpm_cents||0,color:'hold'},
+  {key:'pending',label:'CPM on hold',amt:b.pending_cpm_cents||0,color:'pending'},
   {key:'settled',label:'CPM test settled',amt:b.settled_cpm_cents||0,color:'settled'},
   {key:'other',label:'Other allocations',amt:b.other_allocated_cents||0,color:'other'},
   {key:'available',label:'Available',amt:available,color:'available'}
