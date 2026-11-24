@@ -189,7 +189,11 @@ function payments(data){
   table(['Order','Campaign','Provider','Amount','Status'],(data.rows||[]).map(p=>
    row('<span class="adm-id">'+esc(p.id.slice(0,13))+'…</span><small>'+fmtDate(p.created_at)+'</small>',
     cell(p.campaign_title),tag(p.provider),'<b class="adm-money">'+fmtEur(p.amount_cents)+'</b>',tag(p.status)
-   )), 'No real payment orders have been recorded');
+   )), 'No real payment orders have been recorded')+
+  '<section class="adm-panel" style="margin-top:18px"><div class="adm-panel-head"><h3>Campaign test checkouts</h3><small>Quoted totals · €0 actually charged</small></div>'+
+  table(['Campaign','Reference price','Actual charge','Date'],(data.sandbox_orders||[]).map(o=>
+   row('<b>'+esc(o.campaign_title)+'</b>',fmtEur(o.quoted_amount_cents),'<b class="adm-money">'+fmtEur(o.charged_cents)+'</b>',fmtDate(o.created_at)
+   )),'No sandbox campaign checkouts yet')+'</section>';
 }
 function subscriptions(data){
  return '<div class="adm-warning">'+icon('shield',16)+' Test entitlements only. All charges are €0 and this section cannot invent payments, credits or payouts.</div>'+
