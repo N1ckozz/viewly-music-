@@ -248,3 +248,49 @@ body{background:#070a11!important}
  #v6-results .v6-campaign-card{animation:none!important}
  .v6-ripple{display:none!important}
 }
+
+/* An intentional, interactive empty marketplace: real 0 state, never fabricated reward cards. */
+.v6-empty-market{
+ min-height:300px;display:grid;grid-template-columns:39% minmax(0,1fr);overflow:hidden;
+ border-radius:18px;border:1px solid #b1c4ff47;
+ background:linear-gradient(125deg,#18213c,#141a2b 55%,#0d111c);
+ box-shadow:0 20px 55px #0007,inset 0 1px #ffffff2b
+}
+.v6-empty-art{
+ display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:310px;
+ background:radial-gradient(ellipse 68% 66% at 48% 53%,#465ad35f,transparent 75%),linear-gradient(145deg,#11182b,#1e2b4a);
+ border-right:1px solid #b7c7ff2b
+}
+.v6-empty-art:after{content:'';position:absolute;inset:0;opacity:.6;background:repeating-linear-gradient(115deg,#ffffff05 0 1px,transparent 1px 42px)}
+.v6-empty-disc{
+ position:relative;width:206px;height:206px;display:flex;align-items:center;justify-content:center;
+ border-radius:50%;border:1px solid #a8c6ff42;
+ background:repeating-radial-gradient(circle at 50% 50%,#101627 0 5px,#25315e 6px 7px,#121b34 8px 13px);
+ box-shadow:0 0 0 14px #a7bfff0a,0 20px 48px #0009,inset 0 0 37px #121528;
+ animation:v6-vinyl 24s linear infinite
+}
+@keyframes v6-vinyl{to{transform:rotate(360deg)}}
+.v6-empty-disc:before{content:'';position:absolute;inset:33%;border-radius:50%;background:linear-gradient(135deg,#bbc9ff,#4a64b4);box-shadow:0 0 0 1px #eff4ff8a}
+.v6-empty-disc span{position:relative;z-index:2;font:850 35px var(--display);color:#111a3c;letter-spacing:-.13em}
+.v6-empty-art-label{position:absolute;left:16px;bottom:17px;font:550 9px var(--mono);letter-spacing:1.3px;color:#bac8e5}
+.v6-empty-copy{padding:clamp(22px,3.2vw,39px);display:flex;flex-direction:column;justify-content:center;gap:0}
+.v6-empty-copy h2{font:810 clamp(25px,3vw,42px)/1.05 var(--display);letter-spacing:-.07em;color:#f2f5ff;margin:12px 0}
+.v6-empty-copy p{font-size:12px;line-height:1.7;color:#acb8d3;max-width:480px;margin:0 0 21px}
+.v6-empty-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.v6-launch-steps{display:flex;flex-wrap:wrap;gap:13px;margin-top:22px;border-top:1px solid #b2c4ff24;padding-top:16px}
+.v6-launch-steps span{color:#9baaca;font:610 10px var(--mono);white-space:nowrap}
+.v6-launch-steps b{color:#b7c8ff;margin-right:5px}
+@media(max-width:700px){
+ .v6-empty-market{grid-template-columns:1fr}
+ .v6-empty-art{min-height:133px}
+ .v6-empty-disc{width:111px;height:111px}
+ .v6-empty-disc span{font-size:24px}
+ .v6-empty-art-label{font-size:8px}
+ .v6-empty-copy{padding:20px}
+ .v6-empty-copy h2{font-size:27px}
+ .v6-empty-copy p{font-size:11px}
+ .v6-empty-actions .v6-btn{min-height:39px;font-size:10px;padding:0 11px}
+ .v6-launch-steps{gap:9px}
+ .v6-launch-steps span{font-size:9px}
+}
+@media(prefers-reduced-motion:reduce){.v6-empty-disc{animation:none!important}}
