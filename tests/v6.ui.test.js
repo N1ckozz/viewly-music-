@@ -74,5 +74,5 @@ test('campaign cards and filters do not fabricate view-based payouts',()=>{
  const h=ctx.campaignsPage();
  assert.match(h,/€3\.00/);
  assert.doesNotMatch(h,/1K views|CPM|estimated earnings|fake views/i);
- assert.match(h,/only verified active campaigns/i);
+ assert.match(h,/Only genuinely funded campaigns/i);
 });
