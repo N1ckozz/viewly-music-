@@ -146,15 +146,18 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
  }
  return async function handle(req,res,url){
   const p=url.pathname;
-  if(p==='/api/campaigns/v10'&&req.method==='POST'){
+  if((p==='/api/campaigns/v10'||p==='/api/campaigns/v14')&&req.method==='POST'){
    const u=requireCreator(req);
    assertQuota(db,u.id,'campaigns',fail,id,now);
    const b=await json(req),conf=params(b);
    const release=db.prepare("SELECT id FROM releases WHERE id=? AND owner_id=? AND visibility='public'").get(b.release_id,u.id);
    if(!release)throw fail(422,'Choose a published original music release you own.');
    const cid=id(),created=now(),fee=Math.round(conf.budget*.05);
+   db.exec('BEGIN IMMEDIATE');try{
    db.prepare("INSERT INTO campaigns(id,owner_id,release_id,title,brief,platform,reward_cents,budget_cents,fee_cents,created_at,pricing_model,cpm_rate_cents,max_clip_cents,min_views,tracking_days,rules,mandatory_hashtags,sample_caption,prohibited_content,spotify_track_url,rights_confirmed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)")
     .run(cid,u.id,release.id,conf.name,conf.brief,'TikTok',conf.rate,conf.budget,fee,created,'cpm',conf.rate,conf.cap,conf.min,conf.days,conf.rules,conf.hashtags,conf.caption,conf.prohibited,conf.spotify);
+   if(p.endsWith('/v14'))db.prepare('INSERT INTO campaign_branding(campaign_id) VALUES(?)').run(cid);
+   db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
    broadcast('cpm-campaign');return send(res,201,{campaign:campaignRows('WHERE c.id=?',[cid])[0],
     note:'Draft created. Review the assets and funding quote before test activation. No charge.'});
   }
