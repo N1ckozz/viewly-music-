@@ -21,6 +21,7 @@ test('real authentication, public upload, video range, clips, comments, campaign
  async function request(path,method='GET',obj,auth=true){const headers={};if(auth&&cookie)headers.Cookie=cookie;let body;if(obj instanceof FormData)body=obj;else if(obj!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(obj);}const r=await fetch(base+'/api'+path,{method,headers,body});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return {status:r.status,body:await r.json()};}
  let r=await request('/register','POST',{email:'artist@example.test',username:'artist_sample',display_name:'Test Artist',password:'1234567890Test!',role:'artist'},false);assert.equal(r.status,201);
  assert.equal((await request('/me')).body.user.role,'artist');
+ const activity=await request('/my-submissions');assert.equal(activity.status,200);assert.deepEqual(activity.body.submissions,[],'a fresh account has no invented submissions');
  let invalid=await request('/register','POST',{email:'not-email',username:'z',display_name:'x',password:'bad',role:'admin'},false);assert.equal(invalid.status,422);
  const videoFile=path.join(temp,'video.mp4');const p=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=black:s=160x90:r=12:d=7','-f','lavfi','-i','sine=frequency=222:duration=7','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-shortest','-y',videoFile],{timeout:25000});assert.equal(p.status,0);
  const form=new FormData();form.set('title','Test music release');form.set('description','Real local integration source');form.set('genre','Rap');form.set('rights','on');form.set('video',new Blob([fs.readFileSync(videoFile)],{type:'video/mp4'}),'test.mp4');
@@ -37,5 +38,6 @@ test('real authentication, public upload, video range, clips, comments, campaign
  assert.equal((await request('/payments/stripe/checkout','POST',{campaign_id:camp.body.campaign.id})).status,503,'no fake payment');
  const wallet=(await request('/wallet')).body;assert.equal(wallet.earned_cents,0);assert.equal(wallet.payout_enabled,false);
  await request('/logout','POST');assert.equal((await request('/me')).body.user,null);
+ assert.equal((await request('/my-submissions')).status,401,'submission history is private to the signed-in account');
  assert.equal((await request('/releases','POST',{title:'Not authorized'})).status,401);
 });
