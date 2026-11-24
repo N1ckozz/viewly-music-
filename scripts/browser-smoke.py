@@ -148,10 +148,15 @@ with sync_playwright() as p:
                     expect(film.locator('.v17f-stage')).to_contain_text('CI campaign '+name)
                     expect(film.locator('.v17f-test')).to_contain_text('NO REAL PAYMENT')
                     page.screenshot(path=str(out/f'v17-{name}-film-receipt.png'),animations='disabled')
-                    film.locator('[data-v17f="replay"]').click()
-                    expect(film.locator('.v17f-stage')).to_contain_text('Your music. Your moment.')
-                    film.locator('[data-v17f="receipt"]').click()
-                    expect(film.locator('.v17f-stage .v17f-receipt')).to_be_visible()
+                    for control in ['pause','sound','receipt','replay']:
+                        expect(film.locator('[data-v17f="'+control+'"]')).to_have_count(0)
+                    expect(film.locator('[data-v17f="share"]')).to_be_visible()
+                    expect(film.locator('[data-v17f="video"]')).to_be_enabled(timeout=135000)
+                    with page.expect_download() as download_info:
+                        film.locator('[data-v17f="video"]').click()
+                    download_info.value.save_as(str(root/'share.mp4'))
+                    probe=subprocess.check_output(['ffprobe','-v','error','-show_entries','stream=codec_name,width,height','-of','json',str(root/'share.mp4')],text=True)
+                    assert '"width": 1080' in probe and '"height": 1920' in probe and '"codec_name": "aac"' in probe
                     film.locator('[data-v17f="open"]').click()
                     expect(page.locator('.v10-detail h2')).to_contain_text('CI campaign '+name,timeout=20000)
                     page.reload(wait_until='domcontentloaded')
