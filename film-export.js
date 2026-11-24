@@ -13,7 +13,7 @@ export function publicFilmSpec(f){
  return {title:wrap(f.details.title,16,3),artist:wrap(f.artist,30,2),headline:wrap(f.branding.headline||'Join the campaign on VIEWLY',27,3),rate:euros(f.details.cpm_rate_cents),pool:euros(f.quote.budget_cents),platform:clean(f.details.platform||'TikTok',30),test:true};
 }
 let busy=false;
-export async function renderSocialFilm(f,branding,uploads,fail){
+export async function renderSocialFilm(f,branding,uploads,fail,milestone=null){
  if(busy)throw fail(429,'The film renderer is busy. Try again shortly.');
  const spec=publicFilmSpec(f);
  for(const file of [branding.icon_file,branding.background_file])if(!/^[a-f0-9]{40}\.jpg$/.test(file||''))throw fail(422,'Campaign artwork unavailable.');
@@ -21,6 +21,7 @@ export async function renderSocialFilm(f,branding,uploads,fail){
  try{
   dir=await fs.mkdtemp(path.join(os.tmpdir(),'viewly-film-'));
   const text={brand:'V I E W L Y .',test:'SANDBOX / TEST CAMPAIGN',title:spec.title,artist:spec.artist,headline:spec.headline,rate:spec.rate+' / 1K VIEWS',pool:spec.pool+' TEST REWARD POOL',platform:spec.platform.toUpperCase(),cta:'DISCOVER THE CAMPAIGN',thanks:'MUSIC MOVES HERE.'};
+  if(milestone!==null){if(![1000,10000,100000,1000000].includes(milestone))throw Error('Invalid milestone');text.rate=new Intl.NumberFormat('en-US').format(milestone)+'+';text.pool='PROVIDER-REPORTED VIEWS';text.platform='APPROVED CLIPS / TEST';text.cta='A NEW MILESTONE';text.headline='Thank you for supporting the campaign';}
   for(const [k,v] of Object.entries(text))await fs.writeFile(path.join(dir,k+'.txt'),v,'utf8');
   const filters=[
    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p,zoompan=z='1.035+0.05*on/288':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=1080x1920:fps=24,eq=brightness=-0.32:saturation=0.82[bg]",
