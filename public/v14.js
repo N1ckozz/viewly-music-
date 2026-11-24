@@ -102,8 +102,14 @@ document.addEventListener('click',async ev=>{
  try{
  if(t.hasAttribute('data-v14-pay')){
   if(!f.querySelector('#v14-confirm').checked)throw Error('Confirm the final quote first.');
-  const x=await api(url(draft.cid,'/checkout'),'POST',{confirm:true,quote_hash:draft.quote.quote_hash});if(x.charged_cents!==0)throw Error('Unexpected charge state.');
-  const cid=draft.cid;clearUrls();closeOverlay();toast('TEST campaign launched · €0 charged');await refresh(true);V.loaded=0;void loadFeatured(true);campaignDetail(cid);
+  const uid=S.user?.id,ctx=window.ViewlyLaunchFilm?.prepare();
+  let x;try{x=await api(url(draft.cid,'/checkout'),'POST',{confirm:true,quote_hash:draft.quote.quote_hash});if(!x.ok||x.mode!=='sandbox'||x.charged_cents!==0)throw Error('Unexpected checkout state.');}catch(err){window.ViewlyLaunchFilm?.release(ctx);throw err;}
+  const cid=draft.cid;clearUrls();closeOverlay();
+  if(S.user?.id!==uid){window.ViewlyLaunchFilm?.release(ctx);return;}
+  toast('TEST campaign launched · €0 charged');
+  let opened=false;try{opened=!!(x.film&&window.ViewlyLaunchFilm?.open(x.film,ctx));}catch{window.ViewlyLaunchFilm?.release(ctx);}
+  if(!opened){window.ViewlyLaunchFilm?.release(ctx);campaignDetail(cid);}
+  void refresh(true);V.loaded=0;void loadFeatured(true);
  }else{
   state('');if(!validate(f,draft.step))return;
   if(draft.step===5)await save(f);else step(draft.step+1);
