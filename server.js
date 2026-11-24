@@ -9,6 +9,7 @@ import {initSocial,createSocialHandler,socialAvailability} from './social-oauth.
 import {initCreatorCampaigns,createCreatorCampaignHandler} from './creator-campaigns.js';
 import {startCpmWatchdog} from './cpm-watchdog.js';
 import {createAnalyticsHandler} from './analytics-core.js';
+import {initGrowth,createGrowthHandler,accessFor,joinCampaign} from './growth-core.js';
 import {workspaceSummary} from './workspace-core.js';
 import {initPromotions,createPromotionHandler,campaignBrand} from './promotions-core.js';
 import {newTotpSecret,verifyTotp,encryptSeed,decryptSeed,newRecoveryCodes,recoveryHash,validMfaKey,normalizeRecoveryCode} from './mfa.js';
@@ -59,6 +60,7 @@ initCampaignSandbox(db);
 initSocial(db);
 initCreatorCampaigns(db);
 initPromotions(db);
+initGrowth(db);
 const APP_URL=(process.env.APP_URL||'http://localhost:4179').replace(/\/$/,'');
 const PORT=Number(process.env.PORT||4179);
 const GOOGLE_ID=process.env.GOOGLE_CLIENT_ID||'';
@@ -280,6 +282,7 @@ const sandboxCampaignHandler=createCampaignSandboxHandler({db,requireUser,fail,j
 const socialHandler=createSocialHandler({db,requireUser,fail,json,send,id,now,cookieValue,sha,broadcast});
 const creatorCampaignHandler=createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows});
 startCpmWatchdog({db,id,now,fail,broadcast});
+const growthHandler=createGrowthHandler({db,requireUser,fail,json,send,now,limit});
 const promoHandler=createPromotionHandler({db,requireCreator,sessionUser,fail,json,send,now,id,broadcast,limit,readBody,multipart,serveFile,UPLOADS});
 const analyticsHandler=createAnalyticsHandler({db,requireCreator,fail,send});
 async function handle(req,res){
@@ -306,6 +309,7 @@ async function handle(req,res){
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
  if(req.method==='GET'&&pathname==='/api/events'){if(liveClients.size>=MAX_LIVE_CLIENTS)throw fail(503,'Realtime event capacity reached.');res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(': connected\n\n');liveClients.add(res);const beat=setInterval(()=>{try{res.write(': heartbeat\n\n')}catch{}},20000);req.on('close',()=>{clearInterval(beat);liveClients.delete(res)});return;}
  if(req.method==='GET'&&pathname==='/api/site')return send(res,200,siteSettings(db));
+ if(pathname.startsWith('/api/growth/'))return growthHandler(req,res,url);
  if(pathname.startsWith('/api/promotions/'))return promoHandler(req,res,url);
  if(pathname==='/api/campaigns/v10'&&req.method==='POST'&&process.env.VIEWLY_V14_REQUIRED==='true')throw fail(409,'Use the V14 campaign builder.');
  if(pathname.startsWith('/api/social/'))return socialHandler(req,res,url);
@@ -536,10 +540,12 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
    clipId=clip.id;
   }
   const sid=id(),status=sandbox?'sandbox_pending':'pending';
-  try{
+  db.exec('BEGIN IMMEDIATE');try{
+   joinCampaign(db,actor,camp,fail,now);
    db.prepare('INSERT INTO submissions(id,campaign_id,user_id,clip_id,post_url,status,created_at) VALUES(?,?,?,?,?,?,?)')
-    .run(sid,cid,actor.id,clipId,link,status,now());
-  }catch{throw fail(409,'This clip link has already been submitted.')}
+     .run(sid,cid,actor.id,clipId,link,status,now());
+   db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');if(e.status)throw e;throw fail(409,'This clip link has already been submitted.')}
   broadcast('submission');
   return send(res,201,{submission_id:sid,status,mode:sandbox?'sandbox':'real',charged_cents:sandbox?0:null,
    note:sandbox?'Sandbox submission only. Any review reward is non-withdrawable and not a real financial credit.':'Submitted for human review. External views are not automatically verified.'});
