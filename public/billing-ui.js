@@ -161,5 +161,67 @@ document.addEventListener('click',e=>{
   if(op==='login'){authModal('register');return}if(['cancel','resume','free'].includes(op))operation(op);
  }
 },true);
+
+/* Campaign test checkout: real campaign draft, zero-charge quoted funding, isolated rewards. */
+const prevCampaignDetail=campaignDetail;
+campaignDetail=function(id){
+ prevCampaignDetail(id);
+ const camp=[...(S.campaigns||[]),...(S.myCampaigns||[])].find(x=>x.id===id);
+ const modal=document.querySelector('#overlay .modal');
+ if(!camp||!modal)return;
+ const own=S.user?.id===camp.owner_id;
+ if(camp.is_sandbox){
+  modal.insertAdjacentHTML('afterbegin','<div class="bill-campaign-test-flag">'+icon('shield',16)+
+   ' TEST CAMPAIGN · €0 CHARGED · REWARDS ARE NOT CASH OR WITHDRAWABLE</div>');
+  modal.innerHTML=modal.innerHTML.replace('Remaining funded balance','Remaining TEST campaign credits');
+  modal.innerHTML=modal.innerHTML.replace("This draft is NOT public or rewarded until a real payment is verified.",
+    "Sandbox campaign is publicly visible for testing. Test credits are not real money.");
+  modal.innerHTML=modal.innerHTML.replace('The artist reviews submissions before any reward ledger credit.',
+    'Approvals here produce ONLY non-withdrawable test credits, never cash or actual wallet earnings.');
+ }
+ if(own&&S.config?.billing_sandbox_enabled&&['draft','awaiting_payment'].includes(camp.status)){
+  const button='<div class="bill-test-funding"><span class="bill-overline">CAMPAIGN TEST CHECKOUT</span>'+
+   '<h3>'+money(camp.budget_cents+camp.fee_cents)+' quoted · €0 charged</h3>'+
+   '<p>'+money(camp.budget_cents)+' campaign budget + '+money(camp.fee_cents)+
+   ' platform fee (5%). This starts a simulated campaign with non-withdrawable rewards, no card or real payment.</p>'+
+   '<button type="button" class="bill-cta is-primary" data-bill-test-fund="'+esc(camp.id)+'">'+icon('check',16)+
+   ' Test fund this campaign for €0</button></div>';
+  modal.insertAdjacentHTML('beforeend',button);
+ }
+};
+const previousCampaignsPage=campaignsPage;
+campaignsPage=function(){
+ const html=previousCampaignsPage();
+ const testing=(S.campaigns||[]).filter(c=>c.is_sandbox).length;
+ return testing?'<div class="bill-test-banner">'+icon('shield',18)+'<span><b>SANDBOX / TEST REWARDS</b> · '+
+  testing+' campaign'+(testing===1?'':'s')+' running with €0 actual funding. All rewards are non-withdrawable test credits.</span></div>'+html:html;
+};
+const previousWalletPage=walletPage;
+walletPage=function(){
+ const html=previousWalletPage();
+ if(!S.user)return html;
+ const testCredits=Number(S.wallet?.sandbox_earned_cents||0);
+ return '<div class="bill-wallet-test"><span class="bill-overline">'+icon('shield',15)+' NON-CASH TEST CREDITS</span>'+
+  '<h3>'+money(testCredits)+'</h3><p>Only approved sandbox submissions. Actual payable balance and withdrawal availability remain unchanged (€0).</p>'+
+  '<button type="button" class="bill-inline" data-page="plans">Manage test subscriptions '+icon('arrow',14)+'</button></div>'+html;
+};
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('[data-bill-test-fund]');
+ if(!button)return;
+ e.preventDefault();e.stopImmediatePropagation();
+ const id=button.dataset.billTestFund;
+ const camp=(S.myCampaigns||[]).find(x=>x.id===id);
+ if(!camp)return toast('Campaign no longer found. Refresh your studio.',true);
+ const quote=money(camp.budget_cents+camp.fee_cents);
+ if(!window.confirm('Start TEST campaign with a quoted total of '+quote+'?\n\nNo money will be charged, and approvals give only non-withdrawable test credits.'))return;
+ button.disabled=true;
+ try{
+  const response=await api('/campaigns/'+encodeURIComponent(id)+'/sandbox-fund','POST',{});
+  if(response.charged_cents!==0)throw Error('Sandbox funding safety check failed.');
+  closeOverlay();await refresh(true);
+  toast('TEST campaign active. '+quote+' reference price; €0 charged.');
+ }catch(err){toast(err.message||'Could not start test campaign.',true);button.disabled=false;}
+},true);
+
 window.ViewlyBilling={open(){S.page='plans';render();},reload(){B.loadedFor='';return load(true)}};
 })();
