@@ -17,6 +17,7 @@ const products=[
 ];
 const packages=[['starter','Starter Boost',1999,['top24','card168','launch24']],['growth','Growth Boost',4999,['home72','spot72','card168']],['elite','Elite Takeover',9999,['home168','spot168','top168','genre72','creator72','card168']]];
 export function initPromotions(db){
+ db.exec('CREATE TABLE IF NOT EXISTS campaign_launch_films(campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id),owner_id TEXT NOT NULL REFERENCES users(id),snapshot_json TEXT NOT NULL,created_at TEXT NOT NULL)');
  db.exec("CREATE TABLE IF NOT EXISTS campaign_branding(campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id),icon_file TEXT,background_file TEXT,headline TEXT NOT NULL DEFAULT '',selections TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS promo_products(id TEXT PRIMARY KEY,label TEXT NOT NULL,placement TEXT NOT NULL,hours INTEGER NOT NULL,price_cents INTEGER NOT NULL,capacity INTEGER NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,components TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS promo_orders(campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id),owner_id TEXT NOT NULL REFERENCES users(id),quote_json TEXT NOT NULL,created_at TEXT NOT NULL,charged_cents INTEGER NOT NULL CHECK(charged_cents=0)); CREATE TABLE IF NOT EXISTS promo_placements(campaign_id TEXT NOT NULL REFERENCES campaigns(id),placement TEXT NOT NULL,starts_at TEXT NOT NULL,ends_at TEXT NOT NULL,PRIMARY KEY(campaign_id,placement)); CREATE INDEX IF NOT EXISTS promo_schedule ON promo_placements(placement,ends_at);");
  const add=db.prepare('INSERT OR IGNORE INTO promo_products(id,label,placement,hours,price_cents,capacity,components) VALUES(?,?,?,?,?,?,?)');
  for(const x of products)add.run(...x,'[]');
@@ -93,7 +94,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
   const p=url.pathname;
   if(req.method==='GET'&&p==='/api/promotions/catalog')return send(res,200,{products:catalog(db),sandbox:isSandboxBilling(),real_payments:false});
   if(req.method==='GET'&&p==='/api/promotions/featured')return send(res,200,{items:publicPromotions(db)});
-  const m=p.match(/^\/api\/promotions\/([a-f0-9-]{36})(?:\/(image\/(?:icon|background)|settings|quote|checkout))?$/);
+  const m=p.match(/^\/api\/promotions\/([a-f0-9-]{36})(?:\/(image\/(?:icon|background)|settings|quote|checkout|film))?$/);
   if(!m)throw fail(404,'Promotion route not found.');
   const c=lookup(m[1]),b=branding(m[1]);if(!c||!b)throw fail(404,'Campaign branding not found.');
   const a=sessionUser(req),owner=a?.id===c.owner_id,action=m[2]||'';
@@ -104,6 +105,11 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
    if(!name)throw fail(404,'Image unavailable.');return serveFile(req,res,path.join(UPLOADS,name));
   }
   const actor=requireCreator(req);if(!owner)throw fail(404,'Campaign not found.');
+  if(req.method==='GET'&&action==='film'){
+   const row=db.prepare('SELECT snapshot_json FROM campaign_launch_films WHERE campaign_id=? AND owner_id=?').get(c.id,actor.id);
+   if(!row)throw fail(404,'No confirmed launch film is available.');
+   return send(res,200,{film:JSON.parse(row.snapshot_json)});
+  }
   if(req.method==='GET'&&!action)return send(res,200,{branding:campaignBrand(db,c.id),selections:JSON.parse(b.selections),status:c.status,order:db.prepare('SELECT quote_json,charged_cents FROM promo_orders WHERE campaign_id=?').get(c.id)||null});
   if(!['draft','awaiting_payment'].includes(c.status)&&!(req.method==='POST'&&action==='checkout'&&c.status==='sandbox_active'))throw fail(409,'Campaign is already funded or locked.');
   if(req.method==='POST'&&action.startsWith('image/')){
@@ -148,7 +154,13 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
     const at=now();
     consumeBenefit(db,q,actor.id,at);
     db.prepare('INSERT INTO promo_orders VALUES(?,?,?,?,0)').run(c.id,actor.id,JSON.stringify(q),at);
-    db.prepare('INSERT INTO sandbox_campaign_orders(id,campaign_id,user_id,quoted_amount_cents,charged_cents,created_at) VALUES(?,?,?,?,0,?)').run(id(),c.id,actor.id,q.total_cents,at);
+    const orderId=id();
+    db.prepare('INSERT INTO sandbox_campaign_orders(id,campaign_id,user_id,quoted_amount_cents,charged_cents,created_at) VALUES(?,?,?,?,0,?)').run(orderId,c.id,actor.id,q.total_cents,at);
+    const release=db.prepare('SELECT title,genre FROM releases WHERE id=?').get(current.release_id);
+    const media=db.prepare('SELECT label,mime,bytes FROM campaign_assets WHERE campaign_id=? AND hidden_at IS NULL ORDER BY id').all(c.id);
+    const details=Object.fromEntries(['title','brief','platform','cpm_rate_cents','min_views','max_clip_cents','tracking_days','rules','mandatory_hashtags','sample_caption','prohibited_content','spotify_track_url','rights_confirmed'].map(k=>[k,current[k]]));
+    const snapshot={version:1,mode:'sandbox',payment_status:'test_confirmed',charged_cents:0,receipt_id:orderId,confirmed_at:at,campaign_id:c.id,artist:actor.display_name,release,details,media,branding:campaignBrand(db,c.id),quote:{budget_cents:q.budget_cents,base_fee_cents:q.base_fee_cents??q.fee_cents,discount_cents:q.discount_cents||0,fee_cents:q.fee_cents,promo_cents:q.promo_cents,total_cents:q.total_cents,lines:q.lines,placements:q.placements}};
+    db.prepare('INSERT INTO campaign_launch_films VALUES(?,?,?,?)').run(c.id,actor.id,JSON.stringify(snapshot),at);
     for(const x of q.placements)db.prepare('INSERT INTO promo_placements VALUES(?,?,?,?)').run(c.id,x.placement,at,new Date(Date.parse(at)+x.hours*3600000).toISOString());
     db.prepare("UPDATE campaigns SET status='sandbox_active',sandbox_funded_cents=budget_cents,sandbox_spent_cents=0,launched_at=? WHERE id=?").run(at,c.id);
     db.exec('COMMIT');broadcast('sandbox-campaign');return send(res,201,{ok:true,mode:'sandbox',charged_cents:0,quote:q});
