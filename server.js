@@ -443,7 +443,7 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
   limit(req,'upload',12,3600000);
   if(uploadsInProgress>=MAX_CONCURRENT_UPLOADS)throw fail(503,'An upload is already being processed. Retry shortly.');
   uploadsInProgress++;
-  try{const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await sanitizeCover(get('cover'));else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
+  try{const u=requireCreator(req);const parts=multipart(await readBody(req,MAX_UPLOAD),req.headers['content-type']||'');const get=n=>parts.find(x=>x.name===n);const title=clean(get('title')?.content.toString(),90),desc=clean(get('description')?.content.toString(),900),genre=clean(get('genre')?.content.toString(),30)||'Rap';if(!title||title.length<2)throw fail(422,'Release title is required.');if(!['Trap','Rap','Drill','Hip-Hop','Freestyle','Other'].includes(genre))throw fail(422,'Choose a supported genre.');if(get('rights')?.content?.toString('utf8')!=='on')throw fail(422,'You must confirm that you hold the rights and have permission for public publishing and clipping.');const vid=await saveMedia(get('video'),true);try{await verifyUploadedVideo(vid);}catch(e){await fsp.unlink(path.join(UPLOADS,vid)).catch(()=>{});throw e;}let cover;if(get('cover')?.content.length)cover=await sanitizeCover(get('cover'));else cover=await makeThumbnail(vid);const rid=id();db.prepare('INSERT INTO releases(id,owner_id,title,description,genre,file_name,cover_name,created_at) VALUES (?,?,?,?,?,?,?,?)').run(rid,u.id,title,desc,genre,vid,cover,now());broadcast('release');return send(res,201,{release:getRelease(rid,u)});
   }finally{uploadsInProgress--;}
  }
  const releaseMatch=pathname.match(/^\/api\/releases\/([a-f0-9-]{36})(?:\/(\w+))?$/);
@@ -454,7 +454,7 @@ if(pathname==='/api/security/sessions'&&req.method==='GET'){
    if(!['copyright','harassment','misleading','other'].includes(reason))throw fail(422,'Select a valid report reason.');
    const prior=db.prepare('SELECT id FROM content_reports WHERE release_id=? AND reporter_id=?').get(rid,actor.id);
    if(prior)return send(res,200,{ok:true,status:'already_submitted'});
-   db.prepare('INSERT INTO content_reports VALUES (?,?,?,?,?,?)').run(id(),rid,actor.id,reason,details,now());
+   db.prepare('INSERT INTO content_reports(id,release_id,reporter_id,reason,details,created_at) VALUES (?,?,?,?,?,?)').run(id(),rid,actor.id,reason,details,now());
    broadcast('content-report');
    return send(res,201,{ok:true,status:'recorded',note:'Queued for administrator review. No automatic takedown claimed.'});
   }
