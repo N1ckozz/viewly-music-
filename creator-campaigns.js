@@ -253,6 +253,11 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
      note:'Post identity and current API view count confirmed. Artist must review the content; view counts are not independently fraud-certified.'});
    }
   }
+  if(p==='/api/cpm-submissions/me'&&req.method==='GET'){
+   const user=requireUser(req);
+   const rows=db.prepare('SELECT c.*,u.username AS clipper_name FROM cpm_submissions c JOIN users u ON u.id=c.clipper_id WHERE c.clipper_id=? ORDER BY c.submitted_at DESC LIMIT 75').all(user.id);
+   return send(res,200,{submissions:rows.map(publicSubmission),note:'Reported view counts and credits are sandbox-only; €0 withdrawable.'});
+  }
   const cpm=p.match(/^\/api\/cpm-submissions\/([a-f0-9-]{36})(?:\/(refresh|review|settle|appeal))?$/);
   if(cpm){
    const sid=cpm[1],act=cpm[2]||'',r=db.prepare('SELECT * FROM cpm_submissions WHERE submission_id=?').get(sid);
