@@ -295,7 +295,7 @@ async function handle(req,res){
  if(pathname.startsWith('/api/billing/'))return billingHandler(req,res,url);
  if(pathname==='/api/sandbox/rewards'||/^\/api\/campaigns\/[a-f0-9-]{36}\/sandbox-fund$/.test(pathname))return sandboxCampaignHandler(req,res,pathname);
  if(pathname.startsWith('/api/admin/'))return adminHandler(req,res,url);
- if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
+ if(req.method==='GET'&&pathname==='/api/config')return send(res,200,{brand:'Viewly',mfa_available:MFA_AVAILABLE,email_delivery_ready:!!(process.env.RESEND_API_KEY&&process.env.VIEWLY_MAIL_FROM&&APP_URL.startsWith('https://')),stripe_ready:STRIPE_READY,billing_sandbox_enabled:process.env.VIEWLY_BILLING_MODE==='sandbox'&&process.env.VIEWLY_BILLING_SANDBOX_ALLOWED==='true',google_ready:!!(GOOGLE_ID&&GOOGLE_SECRET),clip_editor:true,provider_integrations:false,paid_marketplace_enabled:PAYMENT_LAUNCH_ENABLED,payouts_enabled:PAYMENT_LAUNCH_ENABLED});
 
  const artistMatch=pathname.match(/^\/api\/artists\/([a-f0-9-]{36})(?:\/(follow))?$/);
  if(artistMatch){
