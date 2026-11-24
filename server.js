@@ -277,8 +277,9 @@ async function handle(req,res){
    if(!allowed)throw fail(404,'File not found.');
    return serveFile(req,res,path.join(UPLOADS,name));
   }
-  const clip=db.prepare('SELECT user_id,release_id FROM clips WHERE file_name=?').get(name);
-  if(!clip||actor?.id!==clip.user_id&&actor?.role!=='admin')throw fail(404,'File not found.');
+  const clip=db.prepare("SELECT c.user_id,r.owner_id,r.visibility,owner.status AS owner_status,clipper.status AS clipper_status FROM clips c JOIN releases r ON r.id=c.release_id JOIN users owner ON owner.id=r.owner_id JOIN users clipper ON clipper.id=c.user_id WHERE c.file_name=?").get(name);
+  const shareable=clip?.visibility==='public'&&clip.owner_status==='active'&&clip.clipper_status==='active';
+  if(!clip||!shareable&&actor?.id!==clip.user_id&&actor?.role!=='admin')throw fail(404,'File not found.');
   return serveFile(req,res,path.join(UPLOADS,name));
  }
  if(!pathname.startsWith('/api/')){if(req.method!=='GET')throw fail(405,'Method not allowed.');const file=pathname==='/'?'index.html':pathname.slice(1);if(!/^[\w.\-/]+$/.test(file)||file.includes('..'))throw fail(404,'Not found.');return serveFile(req,res,path.join(PUBLIC,file));}
