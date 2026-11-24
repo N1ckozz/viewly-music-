@@ -62,6 +62,40 @@ const publicSubmission=(r)=>({submission_id:r.submission_id,campaign_id:r.campai
  settled_cents:r.settled_cents,hold_until:r.hold_until,last_checked_at:r.last_checked_at,post_access:r.post_access,
  risk_flag:r.risk_flag,appeal_reason:r.appeal_reason,monitoring_until:r.monitoring_until,
  payable_cents:0,source:'TikTok API reported views only; no independent fraud certification; sandbox credits are non-withdrawable'});
+export function applyOfficialObservation({db,sid,remote,id,now,fail}){
+ const row=db.prepare('SELECT * FROM cpm_submissions WHERE submission_id=?').get(sid);
+ if(!row)throw fail(404,'Submission not found.');
+ const camp=db.prepare('SELECT * FROM campaigns WHERE id=?').get(row.campaign_id);
+ if(!camp)throw fail(404,'Campaign not found.');
+  return tx(db,()=>{
+   const current=db.prepare('SELECT * FROM cpm_submissions WHERE submission_id=?').get(sid);
+   const active=remote.owned&&remote.available;
+   const missing=active?0:current.missing_checks+1;
+   const max=active?Math.max(current.highest_views,remote.views):current.highest_views;
+   const previousCheck=current.last_checked_at?Date.parse(current.last_checked_at):Date.parse(current.submitted_at);
+   const elapsed=Math.max(1,Date.now()-previousCheck);
+   const sudden=active&&remote.views>current.highest_views&&(remote.views-current.highest_views)>250000&&elapsed<6*3600000;
+   const decline=active&&remote.views<current.highest_views;
+   const risk=sudden?'UNUSUAL_VIEW_SPIKE':decline?'VIEW_COUNT_DECLINED':missing>=2?'POST_UNAVAILABLE':current.risk_flag;
+   const access=active?'visible':missing>=2?'missing':'unconfirmed';
+   const budget=Math.max(0,camp.sandbox_funded_cents-camp.sandbox_spent_cents);
+   const eligible=current.review_status==='approved'&&active&&!risk&&Date.now()<=Date.parse(current.monitoring_until)&&camp.status==='sandbox_active';
+   const delta=eligible?calculateCpmDelta({views:max,rate_cents:camp.cpm_rate_cents,min_views:camp.min_views,max_clip_cents:camp.max_clip_cents,already_accrued_cents:current.accrued_cents,available_budget_cents:budget}):0;
+   if(delta){
+    db.prepare('UPDATE campaigns SET sandbox_spent_cents=sandbox_spent_cents+? WHERE id=?').run(delta,camp.id);
+    db.prepare('INSERT INTO cpm_events VALUES(?,?,?,?,?,?,?,?)').run(id(),sid,current.accrued_cents,current.accrued_cents+delta,delta,max,now(),'TikTok API-reported view increment; non-withdrawable sandbox reservation');
+   }
+   const hold=delta?new Date(Date.now()+72*3600000).toISOString():current.hold_until;
+   db.prepare('UPDATE cpm_submissions SET reported_views=?,highest_views=?,accrued_cents=accrued_cents+?,last_checked_at=?,hold_until=?,post_access=?,risk_flag=?,missing_checks=? WHERE submission_id=?')
+    .run(active?remote.views:current.reported_views,max,delta,now(),hold,access,risk,missing,sid);
+   db.prepare('INSERT INTO cpm_view_snapshots VALUES(?,?,?,?,?,?,?)').run(id(),sid,active?remote.views:null,access,now(),'tiktok',
+    active?'Official TikTok API video.query; not fraud-certified':'No video returned by owner-scoped TikTok API');
+   return {owned:active,reported_views:active?remote.views:null,highest_views:max,new_test_credit_cents:delta,
+    total_test_credit_cents:current.accrued_cents+delta,available_budget_cents:budget-delta,post_access:access,risk_flag:risk,
+    charged_cents:0,withdrawable_cents:0,hold_until:hold,needs_human_review:!!risk};
+  });
+
+}
 export function createCreatorCampaignHandler({db,requireUser,requireCreator,sessionUser,fail,json,send,now,id,broadcast,
  assertQuota,money,readBody,multipart,serveFile,UPLOADS,campaignRows}){
  const lookup=(cid)=>db.prepare('SELECT * FROM campaigns WHERE id=?').get(cid);
@@ -107,33 +141,7 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
   if(!camp||![row.clipper_id,camp.owner_id].includes(actor.id)&&actor.role!=='admin')throw fail(403,'Not your submission.');
   if(!isSandboxBilling())throw fail(503,'No live payout verification has been enabled.');
   const remote=await verifyTikTokVideo(db,row.clipper_id,row.tiktok_video_id,fail);
-  const answer=tx(db,()=>{
-   const current=db.prepare('SELECT * FROM cpm_submissions WHERE submission_id=?').get(sid);
-   const active=remote.owned&&remote.available;
-   const missing=active?0:current.missing_checks+1;
-   const max=active?Math.max(current.highest_views,remote.views):current.highest_views;
-   const previousCheck=current.last_checked_at?Date.parse(current.last_checked_at):Date.parse(current.submitted_at);
-   const elapsed=Math.max(1,Date.now()-previousCheck);
-   const sudden=active&&remote.views>current.highest_views&&(remote.views-current.highest_views)>250000&&elapsed<6*3600000;
-   const decline=active&&remote.views<current.highest_views;
-   const risk=sudden?'UNUSUAL_VIEW_SPIKE':decline?'VIEW_COUNT_DECLINED':missing>=2?'POST_UNAVAILABLE':current.risk_flag;
-   const access=active?'visible':missing>=2?'missing':'unconfirmed';
-   const budget=Math.max(0,camp.sandbox_funded_cents-camp.sandbox_spent_cents);
-   const eligible=current.review_status==='approved'&&active&&!risk&&Date.now()<=Date.parse(current.monitoring_until)&&camp.status==='sandbox_active';
-   const delta=eligible?settlement(current,max,budget,camp):0;
-   if(delta){
-    db.prepare('UPDATE campaigns SET sandbox_spent_cents=sandbox_spent_cents+? WHERE id=?').run(delta,camp.id);
-    db.prepare('INSERT INTO cpm_events VALUES(?,?,?,?,?,?,?,?)').run(id(),sid,current.accrued_cents,current.accrued_cents+delta,delta,max,now(),'TikTok API-reported view increment; non-withdrawable sandbox reservation');
-   }
-   const hold=delta?new Date(Date.now()+72*3600000).toISOString():current.hold_until;
-   db.prepare('UPDATE cpm_submissions SET reported_views=?,highest_views=?,accrued_cents=accrued_cents+?,last_checked_at=?,hold_until=?,post_access=?,risk_flag=?,missing_checks=? WHERE submission_id=?')
-    .run(active?remote.views:current.reported_views,max,delta,now(),hold,access,risk,missing,sid);
-   db.prepare('INSERT INTO cpm_view_snapshots VALUES(?,?,?,?,?,?,?)').run(id(),sid,active?remote.views:null,access,now(),'tiktok',
-    active?'Official TikTok API video.query; not fraud-certified':'No video returned by owner-scoped TikTok API');
-   return {owned:active,reported_views:active?remote.views:null,highest_views:max,new_test_credit_cents:delta,
-    total_test_credit_cents:current.accrued_cents+delta,available_budget_cents:budget-delta,post_access:access,risk_flag:risk,
-    charged_cents:0,withdrawable_cents:0,hold_until:hold,needs_human_review:!!risk};
-  });
+  const answer=applyOfficialObservation({db,sid,remote,id,now,fail});
   broadcast('cpm-views');return send(res,200,answer);
  }
  return async function handle(req,res,url){
