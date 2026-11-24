@@ -95,7 +95,7 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
   const p=url.pathname;
   if(req.method==='GET'&&p==='/api/promotions/catalog')return send(res,200,{products:catalog(db),sandbox:isSandboxBilling(),real_payments:false});
   if(req.method==='GET'&&p==='/api/promotions/featured')return send(res,200,{items:publicPromotions(db)});
-  const m=p.match(/^\/api\/promotions\/([a-f0-9-]{36})(?:\/(image\/(?:icon|background)|settings|quote|checkout|film|social-video))?$/);
+  const m=p.match(/^\/api\/promotions\/([a-f0-9-]{36})(?:\/(image\/(?:icon|background)|settings|quote|checkout|film|social-video|milestone-video))?$/);
   if(!m)throw fail(404,'Promotion route not found.');
   const c=lookup(m[1]),b=branding(m[1]);if(!c||!b)throw fail(404,'Campaign branding not found.');
   const a=sessionUser(req),owner=a?.id===c.owner_id,action=m[2]||'';
@@ -106,12 +106,14 @@ export function createPromotionHandler({db,requireCreator,sessionUser,fail,json,
    if(!name)throw fail(404,'Image unavailable.');return serveFile(req,res,path.join(UPLOADS,name));
   }
   const actor=requireCreator(req);if(!owner)throw fail(404,'Campaign not found.');
-  if(req.method==='POST'&&action==='social-video'){
+  if(req.method==='POST'&&['social-video','milestone-video'].includes(action)){
    limit(req,'social-film-export',4,3600000);
    if(!visible||c.status!=='sandbox_active'||c.sandbox_funded_cents<=c.sandbox_spent_cents)throw fail(409,'Campaign is not available for promotion.');
    const row=db.prepare('SELECT snapshot_json FROM campaign_launch_films WHERE campaign_id=? AND owner_id=?').get(c.id,actor.id);
    if(!row)throw fail(404,'No confirmed launch film is available.');
-   const video=await renderSocialFilm(JSON.parse(row.snapshot_json),b,UPLOADS,fail);
+   let milestone=null;
+   if(action==='milestone-video'){const n=db.prepare("SELECT COALESCE(SUM(reported_views),0) AS n FROM cpm_submissions WHERE campaign_id=? AND review_status='approved' AND post_access='visible' AND risk_flag='' AND last_checked_at IS NOT NULL").get(c.id).n;milestone=[1000000,100000,10000,1000].find(x=>n>=x)||null;if(!milestone)throw fail(409,'No eligible reported-view milestone yet.');}
+   const video=await renderSocialFilm(JSON.parse(row.snapshot_json),b,UPLOADS,fail,milestone);
    if(sessionUser(req)?.id!==actor.id)throw fail(401,'Session expired.');
    const current=lookup(c.id);
    if(current.status!=='sandbox_active'||current.moderation_status!=='visible'||current.sandbox_funded_cents<=current.sandbox_spent_cents||!db.prepare("SELECT 1 FROM releases r JOIN users u ON u.id=r.owner_id WHERE r.id=? AND r.visibility='public' AND u.status='active'").get(current.release_id))throw fail(409,'Campaign is no longer available.');
