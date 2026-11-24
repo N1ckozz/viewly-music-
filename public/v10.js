@@ -192,7 +192,7 @@ function ownerControls(c){
  const draft=['draft','awaiting_payment'].includes(c.status);
  const pause=c.status==='sandbox_active';
  return '<button type="button" class="v10-button v10-primary" data-v11-open="'+value(c.id)+'">'+symbol('campaigns',16)+' Analytics & budget</button>'+ 
-  return '<h3>Campaign control</h3><p>Your terms remain locked after funding so clippers are not surprised by a retroactive rate change.</p>'+
+  '<h3>Campaign control</h3><p>Your terms remain locked after funding so clippers are not surprised by a retroactive rate change.</p>'+
   (draft&&S.config?.billing_sandbox_enabled?'<button class="v10-button v10-primary" data-v10-fund="'+value(c.id)+'">'+symbol('bolt',18)+
    ' Test fund · €0 charged</button>':'')+
   (pause?'<button class="v10-button v10-outlined" data-v10-state="'+value(c.id)+'" data-v10-command="pause">Pause new submissions</button>':'')+
