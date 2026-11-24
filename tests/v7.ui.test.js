@@ -63,7 +63,7 @@ test('one desktop rail, one mobile primary nav, real counts and working collapse
  assert.equal((first.match(/aria-label="Mobile primary navigation"/g)||[]).length,1);
  assert.match(first,/Music library/);
  assert.match(first,/v7-side-number">3</);
- assert.match(first,/Creator tools menu/);
+ assert.match(first,/Open creator tools menu/);
  assert.doesNotMatch(first,/Legacy/);
  let cancelled=0;
  const click=(key,target)=>{
