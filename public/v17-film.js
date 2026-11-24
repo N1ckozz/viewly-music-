@@ -107,7 +107,7 @@ async function prepareVideo(a){
 function downloadVideo(a){const u=URL.createObjectURL(a.video),link=document.createElement('a');link.href=u;link.download=a.video.name;link.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}
 async function shareVideo(a){
  if(!a.video)return;
- try{if(navigator.share&&navigator.canShare?.({files:[a.video]})){await navigator.share({files:[a.video],title:a.film.details.title,text:'Discover the campaign on VIEWLY · test campaign',url:campaignLink(a)});return;}}
+ try{if(navigator.share&&navigator.canShare?.({files:[a.video]})){const payload={files:[a.video],title:a.film.details.title,text:'Discover the campaign on VIEWLY · test campaign',url:campaignLink(a)};await navigator.share(navigator.canShare(payload)?payload:{files:[a.video]});return;}}
  catch(e){if(e.name==='AbortError')return;}
  downloadVideo(a);toast('Video downloaded. Upload it to Instagram Stories or another social app and add the campaign link.');
 }
@@ -123,7 +123,7 @@ document.addEventListener('click',ev=>{
  if(cmd==='retry'){void prepareVideo(a);return;}
  if(cmd==='video'&&a.video){downloadVideo(a);return;}
  if(cmd==='share'){void shareVideo(a);return;}
- if(cmd==='copy'){void navigator.clipboard.writeText(campaignLink(a)).then(()=>toast('Campaign link copied.')).catch(()=>toast('Copy the campaign link from: '+campaignLink(a),true));return;}
+ if(cmd==='copy'){void Promise.resolve().then(()=>navigator.clipboard.writeText(campaignLink(a))).then(()=>toast('Campaign link copied.')).catch(()=>toast('Copy the campaign link from: '+campaignLink(a),true));return;}
  if(cmd==='open'){const cid=a.film.campaign_id;cleanup();closeOverlay();campaignDetail(cid);}
  if(cmd==='download'){const f=a.film,q=f.quote;const txt=['VIEWLY — TEST ORDER CONFIRMATION','No real payment. Not a tax invoice.',f.details.title,'Order: '+f.receipt_id,'Confirmed: '+f.confirmed_at,'Reward pool: '+money(q.budget_cents),'Fee: '+money(q.fee_cents),'Referral discount: '+money(q.discount_cents),...q.lines.map(x=>x.label+': '+money(x.price_cents)),'Quoted total: '+money(q.total_cents),'Actual charge: '+money(f.charged_cents),'Thank you for creating with VIEWLY.'].join('\n');const u=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'})),link=document.createElement('a');link.href=u;link.download='VIEWLY-test-'+f.receipt_id+'.txt';link.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
 },true);
