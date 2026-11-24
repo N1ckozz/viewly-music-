@@ -157,7 +157,7 @@ export function createCreatorCampaignHandler({db,requireUser,requireCreator,sess
    db.exec('BEGIN IMMEDIATE');try{
    db.prepare("INSERT INTO campaigns(id,owner_id,release_id,title,brief,platform,reward_cents,budget_cents,fee_cents,created_at,pricing_model,cpm_rate_cents,max_clip_cents,min_views,tracking_days,rules,mandatory_hashtags,sample_caption,prohibited_content,spotify_track_url,rights_confirmed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)")
     .run(cid,u.id,release.id,conf.name,conf.brief,'TikTok',conf.rate,conf.budget,fee,created,'cpm',conf.rate,conf.cap,conf.min,conf.days,conf.rules,conf.hashtags,conf.caption,conf.prohibited,conf.spotify);
-   if(p.endsWith('/v14'))db.prepare('INSERT INTO campaign_branding(campaign_id) VALUES(?)').run(cid);
+   if(p.endsWith('/v14')){db.prepare('INSERT INTO campaign_branding(campaign_id) VALUES(?)').run(cid);if(b.invite_only===true)db.prepare('INSERT INTO campaign_private VALUES(?)').run(cid);}
    db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
    broadcast('cpm-campaign');return send(res,201,{campaign:campaignRows('WHERE c.id=?',[cid])[0],
     note:'Draft created. Review the assets and funding quote before test activation. No charge.'});
