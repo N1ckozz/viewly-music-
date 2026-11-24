@@ -315,7 +315,71 @@ async function handle(req,res){
    return send(res,200,{user:stripSensitive(u)});
   }
  if(pathname==='/api/logout'&&req.method==='POST'){const tk=cookieValue(req,'viewly_session');if(tk)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(tk));res.setHeader('Set-Cookie',cookie('viewly_session','',0));res.setHeader('Clear-Site-Data','"cache", "storage"');return send(res,200,{ok:true});}
- if(pathname==='/api/security/sessions'&&req.method==='GET'){
+ 
+if(pathname==='/api/security/mfa/login'&&req.method==='POST'){
+ limit(req,'mfa-login',200,15*60*1000);
+ const ticket=cookieValue(req,'viewly_mfa_ticket');
+ if(!ticket)throw fail(401,'Security challenge expired. Sign in again.');
+ const record=db.prepare('SELECT * FROM mfa_tickets WHERE token_hash=? AND expires_at>?').get(sha(ticket),Date.now());
+ if(!record||record.attempts>=6)throw fail(401,'Security challenge expired. Sign in again.');
+ limitAccount('mfa',record.user_id,10);
+ db.prepare('UPDATE mfa_tickets SET attempts=attempts+1 WHERE token_hash=?').run(sha(ticket));
+ const b=await json(req);
+ if(!consumeMfaFactor(record.user_id,String(b.code||'')))throw fail(401,'Invalid authenticator or recovery code.');
+ db.prepare('DELETE FROM mfa_tickets WHERE user_id=?').run(record.user_id);
+ db.prepare('DELETE FROM auth_throttle WHERE key=?').run(sha('mfa:'+record.user_id));
+ res.setHeader('Set-Cookie',cookie('viewly_mfa_ticket','',0));
+ createSession(res,record.user_id);
+ return send(res,200,{user:statements.getUser.get(record.user_id)});
+}
+if(pathname==='/api/security/mfa'&&req.method==='GET'){
+ const u=requireUser(req),method=mfaMethod(u.id);
+ return send(res,200,{available:MFA_AVAILABLE,enabled:!!method?.enabled,pending:!!method&&!method.enabled});
+}
+if(pathname==='/api/security/mfa/setup'&&req.method==='POST'){
+ const u=requireUser(req);
+ if(!MFA_AVAILABLE)throw fail(503,'MFA encryption is not configured on this server.');
+ if(!isRecentSession(req))throw fail(403,'Sign out and sign in again before enabling MFA.');
+ if(hasMfa(u.id))throw fail(409,'Multi-factor authentication is already enabled.');
+ const b=await json(req),owner=statements.byEmail.get(u.email);
+ if(owner.password_hash&&!await validPassword(String(b.current_password||''),owner.password_hash))throw fail(401,'Current password is incorrect.');
+ const secret=newTotpSecret();
+ db.prepare('INSERT OR REPLACE INTO mfa_methods(user_id,seed_cipher,enabled,last_step,created_at) VALUES(?,?,?,?,?)').run(u.id,encryptSeed(secret,MFA_MASTER_KEY),0,-1,now());
+ const otpauth='otpauth://totp/'+encodeURIComponent('Viewly:'+u.email)+'?'+new URLSearchParams({secret,issuer:'Viewly',algorithm:'SHA1',digits:'6',period:'30'});
+ return send(res,200,{secret,otpauth_url:otpauth,note:'Keep this seed private; verify it with your authenticator app before activation.'});
+}
+if(pathname==='/api/security/mfa/enable'&&req.method==='POST'){
+ const u=requireUser(req),method=mfaMethod(u.id),b=await json(req);
+ if(!MFA_AVAILABLE)throw fail(503,'MFA is not configured.');
+ if(!method||method.enabled)throw fail(409,'Begin a new MFA setup.');
+ if(Date.now()-Date.parse(method.created_at)>15*60*1000)throw fail(410,'MFA setup expired. Start over.');
+ const step=verifyTotp(decryptSeed(method.seed_cipher,MFA_MASTER_KEY),String(b.code||''),Date.now(),-1);
+ if(step<0)throw fail(401,'Invalid authenticator code.');
+ db.exec('BEGIN IMMEDIATE');let codes;
+ try{
+  db.prepare('UPDATE mfa_methods SET enabled=1,last_step=? WHERE user_id=? AND enabled=0').run(step,u.id);
+  codes=generateRecovery(u.id);
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(cookieValue(req,'viewly_session')||''));
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e}
+ return send(res,200,{enabled:true,recovery_codes:codes,note:'Save recovery codes now. Each works only once and will not be shown again.'});
+}
+if(pathname==='/api/security/mfa/disable'&&req.method==='POST'){
+ const u=requireUser(req),b=await json(req),owner=statements.byEmail.get(u.email);
+ if(!hasMfa(u.id))throw fail(409,'MFA is not enabled.');
+ if(owner.password_hash&&!await validPassword(String(b.current_password||''),owner.password_hash))throw fail(401,'Current password is incorrect.');
+ limitAccount('mfa-change',u.id,8);
+ if(!consumeMfaFactor(u.id,String(b.code||'')))throw fail(401,'Authenticator or recovery code required.');
+ db.exec('BEGIN IMMEDIATE');
+ try{
+  db.prepare('DELETE FROM mfa_recovery WHERE user_id=?').run(u.id);
+  db.prepare('DELETE FROM mfa_methods WHERE user_id=?').run(u.id);
+  db.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').run(u.id,sha(cookieValue(req,'viewly_session')||''));
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e}
+ return send(res,200,{enabled:false});
+}
+if(pathname==='/api/security/sessions'&&req.method==='GET'){
    const u=requireUser(req),token=cookieValue(req,'viewly_session');
    const rows=db.prepare('SELECT token_hash,created_at,expires_at FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC LIMIT 100').all(u.id,Date.now());
    return send(res,200,{sessions:rows.map(s=>({created_at:new Date(s.created_at).toISOString(),expires_at:new Date(s.expires_at).toISOString(),current:!!token&&s.token_hash===sha(token)}))});
