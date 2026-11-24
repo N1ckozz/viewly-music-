@@ -43,3 +43,5 @@
 @keyframes v17f-enter{from{opacity:0;transform:translate3d(0,25px,-45px) rotateX(-7deg);filter:blur(4px)}to{opacity:1;transform:translate3d(0,0,0) rotateX(0);filter:blur(0)}}
 @media(max-width:700px){.v17f-modal.modal{padding:10px!important}.v17f-stage{aspect-ratio:auto;min-height:440px}.v17f-content{width:100%;align-items:flex-end;padding:132px 14px 42px}.v17f-art{width:85px;top:20px;right:calc(50% - 42px)}.v17f-orbit{height:45%;width:70%;top:0;right:15%}.v17f-orbit.b{width:80%;right:10%}.v17f-grade{background:linear-gradient(0deg,#08101efb 10%,#091222cc 61%,#08122266)}.v17f-scene h2{font-size:29px}.v17f-cards{gap:6px}.v17f-cards>div{padding:8px}.v17f-controls{gap:5px}.v17f-controls button{padding:7px 8px}.v17f-time{margin-left:0}.v17f-top button{margin-left:0}.v17f[data-scene=receipt] .v17f-content{padding:14px 10px 38px}.v17f-receipt{padding:12px}.v17f-receipt dl>div{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.v17f *{animation:none!important;transition:none!important}}
+
+.v17f[data-scene=receipt][data-paused=true] .v17f-scene{animation:none!important;opacity:1;transform:none;filter:none}
