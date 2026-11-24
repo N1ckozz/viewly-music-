@@ -57,6 +57,12 @@ const STRIPE_READY=PAYMENT_LAUNCH_ENABLED&&!!STRIPE_KEY&&!!STRIPE_WEBHOOK_SECRET
 const execFileAsync=promisify(execFile);
 const scryptAsync=promisify(crypto.scrypt);
 const HASH_SETTINGS={N:131072,r:8,p:1,maxmem:256*1024*1024};
+let activePasswordDerivations=0;
+async function derivePassword(password,salt,settings){
+ if(activePasswordDerivations>=2)throw fail(503,'Authentication is busy. Try again shortly.');
+ activePasswordDerivations++;
+ try{return await scryptAsync(password,salt,64,settings)}finally{activePasswordDerivations--;}
+}
 const SESSION_DAYS=7;
 const DUMMY_SALT='12763eccb1a924df7ba553146edf6ccd';
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
@@ -77,7 +83,7 @@ const statements={
 };
 async function hashPassword(password){
  const salt=crypto.randomBytes(16).toString('hex');
- const key=await scryptAsync(password,salt,64,HASH_SETTINGS);
+ const key=await derivePassword(password,salt,HASH_SETTINGS);
  return 's2$'+salt+'$'+key.toString('hex');
 }
 async function validPassword(password,stored){
@@ -93,7 +99,7 @@ async function validPassword(password,stored){
    salt=parts[0];hash=parts[1];legacy=true;
   }
  }
- const key=await scryptAsync(password,salt,64,legacy?{N:16384,r:8,p:1,maxmem:64*1024*1024}:HASH_SETTINGS);
+ const key=await derivePassword(password,salt,legacy?{N:16384,r:8,p:1,maxmem:64*1024*1024}:HASH_SETTINGS);
  const reference=hash?Buffer.from(hash,'hex'):Buffer.alloc(64);
  return crypto.timingSafeEqual(key,reference)&&!!hash;
 }
