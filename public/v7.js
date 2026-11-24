@@ -6,6 +6,7 @@ const V7={compact:false};
 try{V7.compact=localStorage.getItem('viewly.navigation.hidden')==='1'}catch{}
 const railIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/><path class="v12-toggle-arrow" d="m8 9 3 3-3 3"/></svg>';
 function syncRail(){
+ if(typeof document.querySelector!=='function')return false;
  const shell=document.querySelector('.v-app-shell');
  const toggle=document.querySelector('[data-v7-sidebar-toggle]');
  const rail=document.querySelector('#viewly-desktop-navigation');
