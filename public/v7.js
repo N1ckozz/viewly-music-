@@ -118,6 +118,11 @@ renderShell=function(inner){
  return html;
 };
 const tools=[
+ {page:'feed',icon:'play',title:'Music feed',desc:'Discover published artist videos'},
+ {page:'leaderboard',icon:'bolt',title:'Clipper rankings',desc:'Opt-in approved clip rankings'},
+ {page:'community',icon:'user',title:'Community',desc:'Public music discussions'},
+ {page:'saved',icon:'heart',title:'Saved library',desc:'Watchlists and saved music'},
+ {page:'notifications',icon:'bell',title:'Notifications',desc:'Campaign invitations and reviews'},
  {page:'studio',icon:'studio',title:'Artist studio',desc:'Releases and campaign drafts'},
  {page:'analytics',icon:'campaigns',title:'Creator analytics',desc:'Real charts, TikTok views, spending and clipper performance'},
  {page:'wallet',icon:'wallet',title:'Rewards',desc:'Real earnings and activity'},
@@ -169,7 +174,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet','admin','plans','connections','analytics'].includes(place))return;
+ if(!['studio','wallet','admin','plans','connections','analytics','feed','leaderboard','community','saved','notifications'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});
