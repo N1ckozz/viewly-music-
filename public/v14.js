@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const V={catalog:[],featured:[],loaded:0,busy:false};
+const V={catalog:[],featured:[],loaded:0,busy:false,pending:false,retry:0};
 const e=esc,m=n=>eur(Number(n)||0),icon=(n,s=16)=>ico(n,s);
 const url=(cid,s='')=>'/promotions/'+cid+s;
 const field=(n,label,type='text',attrs='')=>'<label>'+label+'<input name="'+n+'" type="'+type+'" '+attrs+'></label>';
@@ -119,7 +119,7 @@ document.addEventListener('click',async ev=>{
 },true);
 document.addEventListener('input',ev=>{const f=ev.target.closest('#v14-form');if(f)updateEstimate(f);},true);
 document.addEventListener('submit',ev=>{if(ev.target.id==='v14-form'){ev.preventDefault();ev.stopImmediatePropagation();}},true);
-async function loadFeatured(force=false){if(V.busy||!force&&Date.now()-V.loaded<60000)return;V.busy=true;try{const x=await api('/promotions/featured');V.featured=x.items||[];V.loaded=Date.now();if(['discover','campaigns'].includes(S.page)&&!document.querySelector('#overlay .modal'))render();}catch{V.loaded=Date.now();}finally{V.busy=false;}}
+async function loadFeatured(force=false){if(V.busy){if(force)V.pending=true;return;}if(!force&&(Date.now()-V.loaded<60000||Date.now()<V.retry))return;V.busy=true;try{const x=await api('/promotions/featured');V.featured=x.items||[];V.loaded=Date.now();V.retry=0;if(['discover','campaigns'].includes(S.page))render();}catch{V.retry=Date.now()+3000;setTimeout(()=>{if(['discover','campaigns'].includes(S.page)&&!document.hidden)void loadFeatured();},3100);}finally{V.busy=false;if(V.pending){V.pending=false;void loadFeatured(true);}}}
 function sponsored(items,title){if(!items.length)return '';const unique=[...new Map(items.map(x=>[x.id,x])).values()].slice(0,8);
  return '<section class="v14-sponsored"><div class="v14-section-title"><div><span class="v14-eyebrow">SPONSORED PLACEMENT · SANDBOX</span><h2>'+title+'</h2></div></div><div class="v14-feature-grid">'+unique.map(x=>'<div>'+previewHTML(x.title,x.headline||x.artist_name,x.icon_url,x.background_url,x.cpm_rate_cents,x.remaining_cents,true)+'<div class="v14-promo-bottom"><span>'+e(x.artist_name)+' · until '+e(new Date(x.ends_at).toLocaleDateString())+'</span><button type="button" data-v14-open="'+e(x.id)+'">View campaign '+icon('arrow',14)+'</button></div></div>').join('')+'</div></section>';
 }
