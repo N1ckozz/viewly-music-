@@ -132,6 +132,11 @@ test('artist can create complete CPM brief and media kit while unlinked clippers
  const attempt=await request('/api/campaigns/'+campaignId+'/cpm-submissions','POST',{post_url:'https://www.tiktok.com/@actualclipper/video/7234567890123456789'});
  assert.equal(attempt.status,403,'no rewards without official linked TikTok identity');
  assert.match(attempt.body.error,/Link your TikTok/);
+ const legacySubmit=await request('/api/campaigns/'+campaignId+'/submit','POST',{post_url:'https://www.tiktok.com/@actualclipper/video/7234567890123456789'});
+ assert.equal(legacySubmit.status,403,'legacy per-post submission cannot bypass TikTok verification');
+ const fakeLegacySubmission=crypto.randomUUID();
+ db.prepare('INSERT INTO submissions(id,campaign_id,user_id,post_url,status,created_at) VALUES (?,?,?,?,?,?)')
+  .run(fakeLegacySubmission,campaignId,actor.body.user.id,'https://www.tiktok.com/@actualclipper/video/7234567890123456788','sandbox_pending',new Date().toISOString());
  const noOtherUpload=await request('/api/campaigns/'+campaignId+'/assets','POST',fd);
  assert.equal(noOtherUpload.status,403,'nonowners cannot upload media assets');
  const ownClips=await request('/api/cpm-submissions/me');
@@ -139,6 +144,9 @@ test('artist can create complete CPM brief and media kit while unlinked clippers
  const notConnected=await request('/connect/tiktok');
  assert.equal(notConnected.status,503,'OAuth must fail closed without approvals');
  cookie=artistCookie;
+ const legacyReview=await request('/api/submissions/'+fakeLegacySubmission+'/review','POST',{status:'approved'});
+ assert.equal(legacyReview.status,403,'legacy per-post approval cannot bypass TikTok or CPM reward review');
+ assert.equal(db.prepare('SELECT count(*) AS n FROM sandbox_creator_rewards').get().n,0,'no unverified sandbox credits');
  const paused=await request('/api/campaigns/'+campaignId+'/pause','POST',{});
  assert.equal(paused.status,200);assert.equal(paused.body.status,'sandbox_paused');
  const resumed=await request('/api/campaigns/'+campaignId+'/resume','POST',{});
