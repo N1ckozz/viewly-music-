@@ -8,7 +8,8 @@ profilePage=function(){
  const center='<section class="sec-center"><div class="sec-center-head"><span class="sec-eyebrow">'+ico('shield',18)+' ACCOUNT SECURITY</span><h3>Protect your account</h3><p>Manage your password and revoke other signed-in browser sessions. Passwords never appear in activity logs.</p></div>'+
  '<form id="sec-password-form" autocomplete="on"><h4>Change password</h4>'+
  '<div class="sec-form-grid"><div class="field"><label for="sec-current">Current password</label><input id="sec-current" type="password" name="current_password" autocomplete="current-password" required></div>'+
- '<div class="field"><label for="sec-new">New password</label><input id="sec-new" type="password" name="new_password" autocomplete="new-password" minlength="12" maxlength="128" required></div></div>'+
+ '<div class="field"><label for="sec-new">New password</label><input id="sec-new" type="password" name="new_password" autocomplete="new-password" minlength="12" maxlength="128" required></div>'+
+ '<div class="field"><label for="sec-mfa-code">Authenticator or recovery code (when MFA is enabled)</label><input id="sec-mfa-code" name="mfa_code" autocomplete="one-time-code" maxlength="40"></div></div>'+
  '<p class="sec-hint">Use a unique password of at least 12 characters; a password manager is recommended.</p>'+
  '<button type="submit" class="v-button is-primary">Update password & sign out other devices '+ico('arrow',15)+'</button><p class="sec-form-response" id="sec-password-status" role="status"></p></form>'+
  '<div class="sec-session-manage"><h4>Signed-in devices</h4><p>Review active browser sessions and revoke every session except this one.</p>'+
@@ -26,7 +27,7 @@ document.addEventListener('submit',async e=>{
  button.disabled=true;
  if(status)status.textContent='Updating credentials securely…';
  try{
-  await api('/security/change-password','POST',{current_password:current,new_password:next});
+  await api('/security/change-password','POST',{current_password:current,new_password:next,mfa_code:String(fd.get('mfa_code')||'')});
   form.reset();if(status)status.textContent='Password updated. Other sessions have been revoked.';
   toast('Password changed; other devices signed out.');
  }catch(err){if(status)status.textContent=err.message||'Password change failed.'}
