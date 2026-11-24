@@ -9,6 +9,7 @@ const low=!!(navigator.connection?.saveData||reduce?.matches);
 const start=performance.now(),minimum=low?0:4400;
 let ready=false,skipped=false,ended=false,frame=0,delay=0,watchdog=0,dispose=()=>{},phase=-1;
 const phases=['Sound in motion','Made for creators','Music moves here'];
+function fallbackTick(now){if(ended||skipped)return;const t=(now-start)/1000;const next=t<1.4?0:t<3?1:2;loader.dataset.phase=String(next);status.textContent=phases[next];if(!ended&&!skipped)frame=requestAnimationFrame(fallbackTick);}
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
 const ease=x=>{x=clamp(x);return x*x*(3-2*x)};
 function finish(){
@@ -40,12 +41,12 @@ function cinematic(){
  const gl=canvas.getContext('webgl',{alpha:false,antialias:true,depth:true,powerPreference:'low-power',preserveDrawingBuffer:false});
  if(!gl)throw Error('WebGL unavailable');
  const objects=[],buffers=[],shaders=[];let program;
- function shader(kind,source){const s=gl.createShader(kind);shaders.push(s);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error('Intro shader failed');return s;}
+ function shader(kind,source){const s=gl.createShader(kind);shaders.push(s);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error('Intro shader failed: '+gl.getShaderInfoLog(s));return s;}
  try{
  program=gl.createProgram();
  gl.attachShader(program,shader(gl.VERTEX_SHADER,'attribute vec3 aPos;attribute vec3 aNormal;uniform vec3 uRot,uOffset,uScale;uniform float uCamera,uAspect;varying vec3 vNormal,vWorld;vec3 rot(vec3 p){float a=cos(uRot.x),b=sin(uRot.x);p=vec3(p.x,a*p.y-b*p.z,b*p.y+a*p.z);a=cos(uRot.y);b=sin(uRot.y);p=vec3(a*p.x+b*p.z,p.y,-b*p.x+a*p.z);a=cos(uRot.z);b=sin(uRot.z);return vec3(a*p.x-b*p.y,b*p.x+a*p.y,p.z);}void main(){vec3 p=rot(aPos*uScale)+uOffset;vWorld=p;vNormal=rot(aNormal/max(uScale,vec3(.001)));float z=uCamera-p.z;gl_Position=vec4(p.x*2.45/uAspect,p.y*2.45,z*1.002-.202,z);}'));
  gl.attachShader(program,shader(gl.FRAGMENT_SHADER,'precision mediump float;uniform vec3 uColor;uniform float uMetal,uGlow,uCamera;varying vec3 vNormal,vWorld;void main(){vec3 n=normalize(vNormal);vec3 v=normalize(vec3(0.,0.,uCamera)-vWorld);vec3 l=normalize(vec3(-.65,1.,1.2));vec3 r=normalize(vec3(.9,-.2,.6));float diffuse=max(0.,dot(n,l));float side=max(0.,dot(n,r));float spec=pow(max(0.,dot(n,normalize(l+v))),28.);float spec2=pow(max(0.,dot(n,normalize(r+v))),12.);float fres=pow(1.-max(0.,dot(n,v)),2.5);vec3 ref=reflect(-v,n);float stripe=exp(-pow((ref.y-.35)*4.,2.));vec3 col=uColor*(.21+.72*diffuse+.24*side)+vec3(.50,.72,1.)*(spec*.95+fres*.28)+vec3(.75,.48,1.)*spec2*.35;col+=uMetal*(stripe*.38+fres*.21)*vec3(.65,.82,1.);col=mix(col,uColor,uGlow);gl_FragColor=vec4(clamp(col,0.,1.),1.);}'));
- gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Intro shader link failed');gl.useProgram(program);
+ gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Intro shader link failed: '+gl.getProgramInfoLog(program));gl.useProgram(program);
  const A={p:gl.getAttribLocation(program,'aPos'),n:gl.getAttribLocation(program,'aNormal')};
  const U=Object.fromEntries(['Rot','Offset','Scale','Color','Camera','Aspect','Metal','Glow'].map(k=>[k,gl.getUniformLocation(program,'u'+k)]));
  const vec=(k,x)=>gl.uniform3fv(U[k],x),scalar=(k,x)=>gl.uniform1f(U[k],x);
@@ -90,9 +91,9 @@ function cinematic(){
   if(next!==phase){phase=next;loader.dataset.phase=String(next);status.textContent=phases[next];}
  }
  dispose=()=>{cancelAnimationFrame(frame);for(const b of buffers)gl.deleteBuffer(b);for(const s of shaders)gl.deleteShader(s);if(program)gl.deleteProgram(program);};
- canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(frame);loader.dataset.renderer='css';},{once:true});
+ canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(frame);loader.dataset.renderer='css';frame=requestAnimationFrame(fallbackTick);},{once:true});
  loader.dataset.renderer='webgl';frame=requestAnimationFrame(tick);
  }catch(e){for(const b of buffers)gl.deleteBuffer(b);for(const s of shaders)gl.deleteShader(s);if(program)gl.deleteProgram(program);throw e;}
 }
-try{cinematic();}catch{loader.dataset.renderer='css';}
+try{cinematic();}catch(error){console.warn('VIEWLY cinematic fallback:',error.message);loader.dataset.renderer='css';frame=requestAnimationFrame(fallbackTick);}
 })();
