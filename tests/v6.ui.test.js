@@ -13,7 +13,7 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 test('V6 ships animated button system and real tracking API with safety gates',()=>{
  assert.match(html,/v6\.css\?v=6\.0/);
  assert.match(html,/v6\.js\?v=6\.0/);
- assert.match(html,/v6\.motion\.js\?v=6\.0/);
+ assert.match(html,/v6\.motion\.js\?v=18\.1/);
  assert.match(css,/prefers-reduced-motion/);
  assert.match(css,/v6-ripple/);
  assert.match(css,/\.v6-campaign-card/);
