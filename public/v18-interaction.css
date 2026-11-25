@@ -1,0 +1,10 @@
+/* V18.1: remove native touch flash without disabling keyboard focus or zoom. */
+html,body,body *{-webkit-tap-highlight-color:transparent!important}
+body,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* Preserve normal editing, and copying artist-provided campaign instructions. */
+body :is(input,textarea,[contenteditable]:not([contenteditable="false"]),[data-viewly-selectable]),
+body :is([contenteditable]:not([contenteditable="false"]),[data-viewly-selectable]) *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+body :is(button,[role="button"],a,svg,img,canvas),body :is(button,[role="button"]) *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body :is(input,textarea,[contenteditable]:not([contenteditable="false"]),[data-viewly-selectable])::selection,
+body [data-viewly-selectable] *::selection{background:#667080;color:#fff}
+.v6-ripple{display:none!important}
