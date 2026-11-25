@@ -29,7 +29,7 @@ function app(){
 }
 test('V10 assets are linked after prior working scripts and improve safe responsiveness',()=>{
  assert.match(html,/\/v10\.css\?v=10\.0/);
- assert.match(html,/\/v10\.js\?v=10\.0/);
+ assert.match(html,/\/v10\.js\?v=18\.1/);
  assert.match(css,/prefers-reduced-motion/);
  assert.match(css,/\.v10-connect-card/);
  assert.match(css,/\.v10-wizard/);
