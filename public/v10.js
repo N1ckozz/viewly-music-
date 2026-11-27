@@ -161,10 +161,10 @@ function viewCampaign(campaign,assets,submissions,social){
   '<div><small>ACTUAL FUNDS RECEIVED</small><b>€0.00</b></div></div>'+
   '<div class="v10-amount-foot">TEST CREDIT: '+euro(Math.max(0,budget-spent))+' of '+euro(budget)+' · not backed by real money or eligible for withdrawal.</div>'+
   '<div class="v10-detail-grid"><section><div class="v10-section-head"><h3>Full mission brief</h3><span>Read before publishing</span></div>'+
-  '<div class="v10-readonly">'+value(campaign.brief,4500)+'</div>'+
-  '<div class="v10-guideline"><b>Creative requirements</b><p>'+value(campaign.rules||'Follow the artist’s brief and platform community guidelines.',2000)+'</p></div>'+
-  (campaign.prohibited_content?'<div class="v10-guideline"><b>Do not include</b><p>'+value(campaign.prohibited_content,800)+'</p></div>':'')+
-  '<div class="v10-guideline"><b>Posting requirements</b><p>Minimum '+Number(campaign.min_views).toLocaleString()+' API views · '+
+  '<div class="v10-readonly" data-viewly-selectable>'+value(campaign.brief,4500)+'</div>'+
+  '<div class="v10-guideline" data-viewly-selectable><b>Creative requirements</b><p>'+value(campaign.rules||'Follow the artist’s brief and platform community guidelines.',2000)+'</p></div>'+
+  (campaign.prohibited_content?'<div class="v10-guideline" data-viewly-selectable><b>Do not include</b><p>'+value(campaign.prohibited_content,800)+'</p></div>':'')+
+  '<div class="v10-guideline" data-viewly-selectable><b>Posting requirements</b><p>Minimum '+Number(campaign.min_views).toLocaleString()+' API views · '+
   Number(campaign.tracking_days)+' days tracking · max '+euro(campaign.max_clip_cents)+' noncash test credits per clip.</p>'+
   (campaign.mandatory_hashtags?'<p>Hashtags: '+value(campaign.mandatory_hashtags,180)+'</p>':'')+
   (campaign.sample_caption?'<p>Caption example: '+value(campaign.sample_caption,280)+'</p>':'')+'</div>'+

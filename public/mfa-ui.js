@@ -68,7 +68,7 @@ document.addEventListener('submit',async e=>{
    const setup=await api('/security/mfa/setup','POST',{current_password:String(fd.get('current_password')||'')});
    const dest=document.querySelector('#mfa-body');if(!dest)return;
    dest.innerHTML='<div class="mfa-secret"><p>1. Add a new time-based account in your authenticator app. Enter this seed manually, or open the setup link on a compatible device.</p>'+
-    '<code>'+esc(setup.secret)+'</code><a href="'+esc(setup.otpauth_url)+'">Open authenticator setup</a><p>2. Enter the 6-digit code from the app below to activate protection.</p></div>'+
+    '<code data-viewly-selectable>'+esc(setup.secret)+'</code><a href="'+esc(setup.otpauth_url)+'">Open authenticator setup</a><p>2. Enter the 6-digit code from the app below to activate protection.</p></div>'+
     '<form id="mfa-enable-form"><div class="field"><label>6-digit setup code</label><input type="text" inputmode="numeric" autocomplete="one-time-code" name="code" pattern="[0-9]{6}" maxlength="6" required></div>'+
     '<button type="submit" class="v-button is-primary">Enable authenticator '+ico('arrow',14)+'</button></form>';
   }else if(form.id==='mfa-enable-form'){
@@ -76,7 +76,7 @@ document.addEventListener('submit',async e=>{
    const dest=document.querySelector('#mfa-body');if(!dest)return;
    const codes=enabled.recovery_codes||[];
    dest.innerHTML='<div class="mfa-enabled"><b>Authenticator enabled</b><p>Save every code below in a secure password manager now. Each can be used once and they will not be displayed again.</p></div>'+
-    '<div class="mfa-recovery-list">'+codes.map(x=>'<code>'+esc(x)+'</code>').join('')+'</div>'+
+    '<div class="mfa-recovery-list" data-viewly-selectable>'+codes.map(x=>'<code>'+esc(x)+'</code>').join('')+'</div>'+
     '<button class="v-button is-subtle" type="button" data-mfa-action="done">I saved my recovery codes</button>';
   }else if(form.id==='mfa-disable-form'){
    if(!window.confirm('Disable two-factor authentication for your account?'))return;

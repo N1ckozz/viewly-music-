@@ -18,6 +18,14 @@ with sync_playwright() as p:
             expect(page.locator('.v-app-shell > .v-workspace')).to_be_visible()
             page.locator('#app-loader').wait_for(state='hidden',timeout=15000)
             assert page.request.get(base+'/api/health').ok
+            if page.locator('link[href*="v18-interaction.css"]').count():
+                button=page.locator('.v-topbar button:visible').first
+                assert button.evaluate("e=>getComputedStyle(e).webkitTapHighlightColor")=='rgba(0, 0, 0, 0)'
+                assert button.evaluate("e=>getComputedStyle(e).userSelect")=='none'
+                assert page.locator('.e18-hero h1').evaluate("e=>getComputedStyle(e).userSelect")=='none'
+                assert page.locator('.e18-hero h1').evaluate("""e=>{const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);const ev=new Event('copy',{bubbles:true,cancelable:true});e.dispatchEvent(ev);s.removeAllRanges();return ev.defaultPrevented}""")
+            elif '127.0.0.1' in base:
+                raise AssertionError('V18.1 touch policy missing')
             if page.locator('.g15-welcome').count():
                 expect(page.locator('.g15-scene')).to_be_visible()
                 page.locator('[data-g15-next]').click()
@@ -52,6 +60,11 @@ with sync_playwright() as p:
                 expect(page.locator('.e18-ranking,.e18-empty').first).to_be_visible()
                 page.locator('.v-topbar [data-e18-search]').click()
                 expect(page.locator('#e18-search-form')).to_be_visible()
+                if page.locator('link[href*="v18-interaction.css"]').count():
+                    field=page.locator('#e18-search-form input')
+                    assert field.evaluate("e=>getComputedStyle(e).userSelect")=='text'
+                    assert field.evaluate("e=>e.dispatchEvent(new Event('copy',{bubbles:true,cancelable:true}))")
+                    assert field.evaluate("e=>e.dispatchEvent(new Event('paste',{bubbles:true,cancelable:true}))")
                 page.locator('#e18-search-form input').fill('no-match-v18')
                 page.locator('#e18-search-form button').click()
                 expect(page.locator('#e18-results')).to_contain_text('No matches')
@@ -184,6 +197,11 @@ with sync_playwright() as p:
                     assert '"width": 1080' in probe and '"height": 1920' in probe and '"codec_name": "aac"' in probe
                     film.locator('[data-v17f="open"]').click()
                     expect(page.locator('.v10-detail h2')).to_contain_text('CI campaign '+name,timeout=20000)
+                    brief=page.locator('.v10-readonly[data-viewly-selectable]')
+                    expect(brief).to_be_visible()
+                    assert brief.evaluate("e=>getComputedStyle(e).userSelect")=='text'
+                    assert brief.evaluate("""e=>{document.activeElement.blur();const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);const ev=new Event('copy',{bubbles:true,cancelable:true});e.dispatchEvent(ev);s.removeAllRanges();return !ev.defaultPrevented}""")
+                    assert page.locator('.v10-detail button:visible').first.evaluate("e=>getComputedStyle(e).webkitTapHighlightColor")=='rgba(0, 0, 0, 0)'
                     page.reload(wait_until='domcontentloaded')
                     page.locator('#app-loader').wait_for(state='hidden',timeout=16000)
                     expect(page.locator('.v-app-shell > .v-topbar')).to_be_visible(timeout=20000)

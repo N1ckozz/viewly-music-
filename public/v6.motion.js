@@ -18,19 +18,7 @@ if(!coarse)document.addEventListener('pointermove',e=>{
   lastElement.style.setProperty('--v6-y',((lastY-r.top)/r.height*100).toFixed(1)+'%');
  });
 },{passive:true});
-document.addEventListener('pointerdown',e=>{
- const btn=e.target.closest('.v6-btn,.v-button,.primary,.secondary,.outline,.v-card-cta');
- if(!btn||btn.disabled)return;
- const r=btn.getBoundingClientRect();
- if(!r.width||!r.height)return;
- const ripple=document.createElement('span');
- ripple.className='v6-ripple';
- ripple.setAttribute('aria-hidden','true');
- ripple.style.setProperty('--v6-rx',(e.clientX-r.left)+'px');
- ripple.style.setProperty('--v6-ry',(e.clientY-r.top)+'px');
- btn.appendChild(ripple);
- ripple.addEventListener('animationend',()=>ripple.remove(),{once:true});
-},{passive:true});
+// Button ripples removed: native taps stay clean.
 let pend=false;
 const app=document.querySelector('#app');
 if(app&&'MutationObserver'in window){
