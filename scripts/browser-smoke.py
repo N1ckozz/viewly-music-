@@ -73,6 +73,18 @@ with sync_playwright() as p:
                 expect(page.locator('.e18-home')).to_be_visible()
             elif '127.0.0.1' in base:
                 raise AssertionError('V18 discovery missing')
+            if page.locator('script[src*="v19.js"]').count():
+                expect(page.locator('.v19-guest')).to_be_visible()
+                page.locator('.v19-guest [data-page="market"]').click()
+                expect(page.locator('.v19-market')).to_be_visible()
+                page.locator('[data-v19-filter="cpm"]').click()
+                expect(page.locator('[data-v19-filter="cpm"]')).to_have_attribute('aria-pressed','true')
+                page.locator('.v-bottom-nav [data-page="discover"]').click() if name=='mobile' else page.locator('#viewly-desktop-navigation [data-page="discover"]').click()
+                page.locator('.v19-guest [data-page="trust"]').click()
+                expect(page.locator('.v19-home h1')).to_have_text('How it works.')
+                expect(page.locator('.v19-home')).to_contain_text('Cash checkout and withdrawals are not available')
+                page.locator('.v-bottom-nav [data-page="discover"]').click() if name=='mobile' else page.locator('#viewly-desktop-navigation [data-page="discover"]').click()
+                assert page.request.get(base+'/api/ecosystem/workbench').status==401
             page.screenshot(path=str(out/f'{name}-home.png'),full_page=True,animations='disabled')
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 2'), 'Horizontal document overflow'
             if name=='desktop':
@@ -146,6 +158,11 @@ with sync_playwright() as p:
                     page.goto(base,wait_until='domcontentloaded')
                     expect(page.locator('.v13-status')).to_contain_text('Live database',timeout=20000)
                     rid=rel.json()['release']['id']
+                    bench=page.request.get(base+'/api/ecosystem/workbench')
+                    assert bench.ok,bench.text()
+                    assert bench.json()['counts']['releases']==1 and bench.json()['counts']['joined']==0
+                    assert not bench.json()['connections']
+                    assert 'encrypted_token' not in bench.text()
                     saved=page.request.post(base+'/api/ecosystem/save',headers=headers,data={'id':rid,'kind':'release','saved':True})
                     assert saved.ok,saved.text()
                     assert any(r['id']==rid for r in page.request.get(base+'/api/ecosystem/saved').json()['releases'])
@@ -197,6 +214,8 @@ with sync_playwright() as p:
                     assert '"width": 1080' in probe and '"height": 1920' in probe and '"codec_name": "aac"' in probe
                     film.locator('[data-v17f="open"]').click()
                     expect(page.locator('.v10-detail h2')).to_contain_text('CI campaign '+name,timeout=20000)
+                    expect(page.locator('.v19-campaign-terms > div')).to_have_count(3)
+                    expect(page.locator('.v19-budget-panel [role="progressbar"]')).to_be_visible()
                     brief=page.locator('.v10-readonly[data-viewly-selectable]')
                     expect(brief).to_be_visible()
                     assert brief.evaluate("e=>getComputedStyle(e).userSelect")=='text'
