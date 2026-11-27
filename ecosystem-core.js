@@ -1,3 +1,4 @@
+import {creatorWorkbench} from './workspace-v19.js';
 import {initCampaignPrivacy,isPrivateCampaign,canReadCampaign,publicOnly} from './campaign-privacy.js';
 import {isSandboxBilling} from './billing-core.js';
 const uuid=/^[a-f0-9-]{36}$/;
@@ -51,6 +52,7 @@ export function createEcosystemHandler({db,sessionUser,requireUser,requireCreato
   if(method==='GET'){
    limit(req,'eco-read',100,60000);
    if(p==='home')return send(res,200,ecosystemHome(db,actor));
+   if(p==='workbench')return send(res,200,creatorWorkbench(db,requireUser(req)));
    if(p==='rank'){const days=Number(url.searchParams.get('days')??7),cid=url.searchParams.get('campaign');if(![0,7,30].includes(days)||cid&&!uuid.test(cid))throw fail(422,'Invalid ranking period.');if(cid&&(!canReadCampaign(db,cid,actor)||!visibleCampaign(cid)&&!one(db,'SELECT 1 FROM campaigns WHERE id=? AND owner_id=?',cid,actor?.id||'')))throw fail(404,'Campaign unavailable.');return send(res,200,{rows:ranking(db,days,cid,Date.now(),!!cid&&canReadCampaign(db,cid,actor)),days,mode:isSandboxBilling()?'sandbox':'live',methodology:'Approved clips by approval date; latest provider-reported views are not fraud-certified or cash rewards.'});}
    if(p==='search'){const q=(url.searchParams.get('q')||'').trim().slice(0,80);if(q.length<2)return send(res,200,{releases:[],campaigns:[],artists:[]});return send(res,200,{releases:all(db,releases+" AND (instr(lower(r.title),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0) ORDER BY r.created_at DESC LIMIT 15",q,q).map(mapRelease),campaigns:all(db,campaigns+' AND '+funded()+publicOnly(db)+" AND (instr(lower(c.title),lower(?))>0 OR instr(lower(u.display_name),lower(?))>0) ORDER BY c.created_at DESC LIMIT 15",q,q).map(mapCampaign),artists:all(db,artists+" AND (instr(lower(u.display_name),lower(?))>0 OR instr(lower(u.username),lower(?))>0) ORDER BY followers DESC LIMIT 15",q,q)});}
    if(p==='saved'){const u=requireUser(req);return send(res,200,{account_id:u.id,releases:all(db,releases+" AND EXISTS(SELECT 1 FROM ecosystem_saves s WHERE s.user_id=? AND s.kind='release' AND s.target_id=r.id) ORDER BY r.created_at DESC LIMIT 100",u.id).map(mapRelease),campaigns:all(db,campaigns+' AND '+funded()+" AND EXISTS(SELECT 1 FROM ecosystem_saves s WHERE s.user_id=? AND s.kind='campaign' AND s.target_id=c.id) ORDER BY c.created_at DESC LIMIT 100",u.id).filter(c=>canReadCampaign(db,c.id,u)).map(mapCampaign)});}

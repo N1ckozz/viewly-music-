@@ -87,8 +87,8 @@ renderShell=function(inner){
  let html=baseShell(inner);
  html=html.replace('class="v-app-shell"','class="v-app-shell v7-app v16-left-nav'+(V7.compact?' v7-nav-mini':'')+'"');
  const newRail='<nav class="v-rail" aria-label="Desktop primary navigation">'+
-  sideGroup('DISCOVER',[['discover','Home','discover'],['releases','Music library','releases',S.releases.length],['campaigns','Campaigns','campaigns',S.campaigns.length]])+
-  sideGroup('YOUR WORKSPACE',[['clips','Clip studio','scissors'],['studio','Artist tools','studio'],['wallet','Rewards','wallet'],['connections','Social accounts','user']])+
+  sideGroup('DISCOVER',[['discover','Home','discover'],['market','Discover','campaigns'],['releases','Music library','releases',S.releases.length],['campaigns','Campaigns','campaigns',S.campaigns.length]])+
+  sideGroup('YOUR WORKSPACE',[['clips','Clip studio','scissors'],['submissions','Submissions','video'],['studio','Artist tools','studio'],['wallet','Rewards','wallet'],['connections','Social accounts','user']])+sideGroup('ACCOUNT',[['profile','Settings','user'],['trust','How it works','shield']])+
   '</nav>';
  const navMatch=/<nav class="v-rail" aria-label="Desktop primary navigation">[\s\S]*?<\/nav>/;
  if(!navMatch.test(html))throw Error('Navigation layout unavailable');
@@ -118,6 +118,8 @@ renderShell=function(inner){
  return html;
 };
 const tools=[
+ {page:'market',icon:'campaigns',title:'Discover campaigns',desc:'Browse artwork, CPM and budget information'},
+ {page:'trust',icon:'shield',title:'How it works',desc:'Account authorization, reviews and reward eligibility'},
  {page:'feed',icon:'play',title:'Music feed',desc:'Discover published artist videos'},
  {page:'leaderboard',icon:'bolt',title:'Clipper rankings',desc:'Opt-in approved clip rankings'},
  {page:'community',icon:'user',title:'Community',desc:'Public music discussions'},
@@ -174,7 +176,7 @@ document.addEventListener('click',e=>{
   document.querySelector('[data-v-tab="settings:security"]')?.click();
   return;
  }
- if(!['studio','wallet','admin','plans','connections','analytics','feed','leaderboard','community','saved','notifications'].includes(place))return;
+ if(!['studio','wallet','admin','plans','connections','analytics','feed','leaderboard','community','saved','notifications','market','trust'].includes(place))return;
  S.page=place;render();
  if(S.user)refresh(true);
  window.scrollTo({top:0,behavior:'instant'});
