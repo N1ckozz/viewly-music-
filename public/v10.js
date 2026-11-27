@@ -39,11 +39,11 @@ function connectionsPage(){
  const availability=X.social?.ready||{};
  const artistUrl=X.social?.spotify_artist_url||'';
  return '<div class="v10-page"><header class="v10-page-head"><span class="v10-kicker">'+symbol('shield',16)+' IDENTITY & ACCOUNT SAFETY</span>'+
-  '<h1>Connect. <em>Create.</em></h1>'+
+  '<h1>Social accounts.</h1>'+
   '<p>A clip is only eligible for view-based rewards after the TikTok account that posted it has granted access and its ownership is confirmed through the official API.</p></header>'+
   (X.accountError?'<div class="v10-alert">'+value(X.accountError)+'</div>':'')+
   '<div class="v10-connect-grid">'+connection('TikTok','Required for creators submitting clips and receiving API-reported view checks.',t,availability.tiktok)+
-  connection('Spotify','Connect your personal Spotify identity. Artist-page ownership is not confirmed by this connection.',p,availability.spotify)+'</div>'+
+  connection('Spotify','Connect your personal Spotify identity. Artist-page ownership is not confirmed by this connection.',p,availability.spotify)+'</div><div class="v19-social-note"><b>Supported platforms</b><p>TikTok is the only supported clip ownership and view tracking integration. Spotify is an identity connection, not a reward platform. Instagram, YouTube, Facebook and X are not available for verification yet. VIEWLY never asks for your social password.</p></div>'+
   '<section class="v10-panel"><div class="v10-section-head"><h2>Spotify artist profile</h2><span>PUBLIC REFERENCE · NOT VERIFIED OWNERSHIP</span></div>'+
   '<p>Add the actual Spotify artist page for your music. This link helps clippers find your songs; it is never displayed as a verified artist-ownership badge.</p>'+
   '<form id="v10-spotify-form" class="v10-inline-form"><label>Spotify artist page<input type="url" name="artist_url" value="'+value(artistUrl)+'" placeholder="https://open.spotify.com/artist/..."></label>'+
@@ -155,6 +155,8 @@ function viewCampaign(campaign,assets,submissions,social){
   (campaign.branding?.background_url?'<div class="v14-detail-brand"><img src="'+value(campaign.branding.background_url)+'" alt="">'+(campaign.branding.icon_url?'<img class="v14-detail-icon" src="'+value(campaign.branding.icon_url)+'" alt="">':'')+'</div>':'')+'<h2>'+value(campaign.title)+'</h2><p>'+value(campaign.artist_name)+' · '+value(campaign.release_title)+'</p>'+
   '<div class="v10-tags"><span> TikTok</span><span>'+euro(campaign.cpm_rate_cents)+' / 1K reported views</span>'+
   '<span>Max '+euro(campaign.max_clip_cents)+' / clip</span>'+status(campaign.status)+'</div></header>'+
+  '<div class="v19-campaign-terms"><div><small>TikTok · reward per 1K reported views</small><b>'+euro(campaign.cpm_rate_cents)+'</b></div><div><small>Minimum reported views</small><b>'+Number(campaign.min_views).toLocaleString()+'</b></div><div><small>Maximum per clip</small><b>'+euro(campaign.max_clip_cents)+'</b></div></div>'+
+  '<div class="v19-budget-panel"><small>Campaign budget · '+(campaign.is_sandbox?'TEST CREDITS':'FUNDING RECORD')+'</small><div><strong>'+euro(spent)+' / '+euro(budget)+'</strong></div><div class="v19-progress" role="progressbar" aria-label="Allocated budget" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+(budget?Math.min(100,Math.round(spent/budget*100)):0)+'"><i style="width:'+(budget?Math.min(100,Math.round(spent/budget*100)):0)+'%"></i></div><p>'+euro(Math.max(0,budget-spent))+' remaining · '+(campaign.is_sandbox?'not withdrawable':'subject to eligibility and review')+'</p></div>'+
   '<div class="v10-statcards"><div><small>CAMPAIGN BUDGET</small><b>'+euro(campaign.budget_cents)+'</b></div>'+
   '<div><small>PLATFORM FEE · 5%</small><b>'+euro(campaign.fee_cents)+'</b></div>'+
   '<div><small>QUOTED TOTAL</small><b>'+euro(campaign.promo_total_cents??(campaign.budget_cents+campaign.fee_cents))+'</b></div>'+
@@ -206,6 +208,7 @@ function clipperControls(c,linked,social){
   (social?.ready?.tiktok?'<a class="v10-button v10-primary" href="/connect/tiktok">Connect TikTok securely</a>':
   '<div class="v10-alert">TikTok OAuth approval and credentials are not configured. Submissions cannot earn verified-view credits until the official integration is available.</div>')+
   socialLink();
+ if(c.access&&!c.access.joined&&c.access.allowed)return '<h3>Join this campaign</h3><p>Review the artist brief, reward terms and media before joining.</p><button type="button" class="v10-button v10-primary" data-g15-join="'+value(c.id)+'" data-free="false">Join campaign</button>';
  return '<h3>Step 2 · Publish & verify</h3><p>Connected identity: <b>'+value(linked.display_name)+'</b></p>'+
   '<a class="v10-button v10-outlined" target="_blank" rel="noopener noreferrer" href="https://www.tiktok.com/upload">Upload your clip on TikTok</a>'+
   (c.sample_caption?'<button class="v10-button v10-outlined" data-v10-copy-caption="'+value(c.sample_caption)+'">Copy sample caption</button>':'')+
