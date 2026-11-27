@@ -35,7 +35,7 @@ function boot(){
 
 test('V7 assets are linked and typography uses a consistent responsive system',()=>{
  assert.match(html,/\/v7\.css\?v=7\.0/);
- assert.match(html,/\/v7\.js\?v=18\.0/);
+ assert.match(html,/\/v7\.js\?v=19\.0/);
  assert.match(css,/Manrope/);
  assert.match(css,/Space\+Grotesk/);
  assert.match(css,/prefers-reduced-motion/);
